@@ -15,11 +15,13 @@
 package main
 
 import (
-	"github.com/matrixorigin/linter/gorecover"
+	"github.com/matrixorigin/linter/checkrecover"
 
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
 func main() {
-	unitchecker.Main(gorecover.Analyzer)
+	unitchecker.Main(
+		checkrecover.Analyzer,
+	)
 }
