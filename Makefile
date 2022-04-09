@@ -1,8 +1,8 @@
 PKGNAME=$(shell go list)
 
 build:
-	@go build ${PKGNAME}/tools/recoverlinter
+	@go build ${PKGNAME}/cmd/molint
 
 .PHONY: clean
 clean:
-	@rm recoverlinter
+	@rm molint
