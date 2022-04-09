@@ -32,7 +32,7 @@ go vet -vettool=`which recoverlinter` ./pkg/frontend
 
 # github.com/matrixorigin/matrixone/pkg/frontend
 pkg/frontend/load.go:1491:12: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor.LoadLoop()
-pkg/frontend/routine\_manager.go:45:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Created()
-pkg/frontend/routine\_manager.go:73:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Closed()
-pkg/frontend/routine\_manager.go:113:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Handler()
+pkg/frontend/routine_manager.go:45:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Created()
+pkg/frontend/routine_manager.go:73:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Closed()
+pkg/frontend/routine_manager.go:113:13: unsafe recover() found: in github.com/matrixorigin/matrixone/pkg/frontend.RoutineManager.Handler()
 ```
