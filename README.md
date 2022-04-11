@@ -25,3 +25,8 @@ This linter helps to enforce that.
 
 It will fail when checking the frontend folder as recover() calls there are not currently marked as approved. 
 
+### checkpanic
+
+Also required by our [error handling rules](https://github.com/matrixorigin/matrixone/blob/main/pkg/common/moerr/error_handling.md),
+panics should be called with well-defined moerr error.
+

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"github.com/matrixorigin/linter/checkpanic"
 	"github.com/matrixorigin/linter/checkrecover"
 
 	"golang.org/x/tools/go/analysis/unitchecker"
@@ -23,5 +24,6 @@ import (
 func main() {
 	unitchecker.Main(
 		checkrecover.Analyzer,
+		checkpanic.Analyzer,
 	)
 }
