@@ -63,32 +63,33 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	inspect.Preorder(nodeFilter, func(node ast.Node) {
-		switch stmt := node.(type) {
-		case *ast.CallExpr:
-			if isCallingBuiltInRecover(stmt.Fun) && !isTestFile(pass, node) {
-				structName, funcName, ok := getMethodDetails(pass, node)
+		stmt, ok := node.(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		if isCallingBuiltInRecover(stmt.Fun) && !isTestFile(pass, node) {
+			structName, funcName, ok := getMethodDetails(pass, node)
+			if !ok {
+				funcName, ok = getFunctionDetails(pass, node)
 				if !ok {
-					funcName, ok = getFunctionDetails(pass, node)
-					if !ok {
-						panic("failed to identify method/function details")
-					}
+					panic("failed to identify method/function details")
 				}
-				if !isWhiteListed(whiteList, structName, funcName) {
-					var msg string
-					if structName != "" {
-						msg = fmt.Sprintf("%v: in %s.%s()",
-							errUnsafeRecover,
-							structName,
-							funcName,
-						)
-					} else {
-						msg = fmt.Sprintf("%v: in %s()",
-							errUnsafeRecover,
-							funcName,
-						)
-					}
-					pass.Reportf(node.Pos(), msg)
+			}
+			if !isWhiteListed(whiteList, structName, funcName) {
+				var msg string
+				if structName != "" {
+					msg = fmt.Sprintf("%v: in %s.%s()",
+						errUnsafeRecover,
+						structName,
+						funcName,
+					)
+				} else {
+					msg = fmt.Sprintf("%v: in %s()",
+						errUnsafeRecover,
+						funcName,
+					)
 				}
+				pass.Reportf(node.Pos(), msg)
 			}
 		}
 	})
