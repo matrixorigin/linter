@@ -47,9 +47,10 @@ type approved struct {
 
 // TODO: finalize the whitelist
 var whiteList = []approved{
+	// confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Compile"},
-	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Run"},
-	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
+	// confirmed with nnsgmsone
+	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -68,27 +69,19 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 		if isCallingBuiltInRecover(stmt.Fun) && !isTestFile(pass, node) {
-			structName, funcName, ok := getMethodDetails(pass, node)
+			typeName, funcName, ok := getMethodDetails(pass, node)
 			if !ok {
-				funcName, ok = getFunctionDetails(pass, node)
+				typeName, funcName, ok = getFunctionDetails(pass, node)
 				if !ok {
 					panic("failed to identify method/function details")
 				}
 			}
-			if !isWhiteListed(whiteList, structName, funcName) {
-				var msg string
-				if structName != "" {
-					msg = fmt.Sprintf("%v: in %s.%s()",
-						errUnsafeRecover,
-						structName,
-						funcName,
-					)
-				} else {
-					msg = fmt.Sprintf("%v: in %s()",
-						errUnsafeRecover,
-						funcName,
-					)
-				}
+			if !isWhiteListed(whiteList, typeName, funcName) {
+				msg := fmt.Sprintf("%v: in %s.%s()",
+					errUnsafeRecover,
+					typeName,
+					funcName,
+				)
 				pass.Reportf(node.Pos(), msg)
 			}
 		}
@@ -107,7 +100,7 @@ func isWhiteListed(whiteList []approved, typeName string, functionName string) b
 	return false
 }
 
-func getFunctionDetails(pass *analysis.Pass, node ast.Node) (string, bool) {
+func getFunctionDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {
 	for _, file := range pass.Files {
 		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.Pos())
 		if len(path) == 0 {
@@ -115,12 +108,13 @@ func getFunctionDetails(pass *analysis.Pass, node ast.Node) (string, bool) {
 		}
 		for _, cp := range path {
 			if fd, ok := cp.(*ast.FuncDecl); ok && fd.Recv == nil {
-				return fd.Name.Name, true
+				p := pass.TypesInfo.Defs[fd.Name].Pkg().Path()
+				return p, fd.Name.Name, true
 			}
 		}
 	}
 
-	return "", false
+	return "", "", false
 }
 
 func getMethodDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {
