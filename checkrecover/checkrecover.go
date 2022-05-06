@@ -45,10 +45,11 @@ type approved struct {
 	functionName     string
 }
 
-// TODO: finalize the whitelist
 var whiteList = []approved{
 	// confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Compile"},
+	// confirmed with nnsgmsone
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Run"},
 	// confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
 }
