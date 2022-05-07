@@ -25,3 +25,7 @@ This linter helps to enforce that.
 
 It will fail when checking the frontend folder as recover() calls there are not currently marked as approved. 
 
+### pkgblocklist
+
+Block unwanted packages from importing.
+
