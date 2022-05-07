@@ -16,6 +16,7 @@ package main
 
 import (
 	"github.com/matrixorigin/linter/checkrecover"
+	"github.com/matrixorigin/linter/pkgblocklist"
 
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
@@ -23,5 +24,6 @@ import (
 func main() {
 	unitchecker.Main(
 		checkrecover.Analyzer,
+		pkgblocklist.Analyzer,
 	)
 }
