@@ -46,12 +46,13 @@ type approved struct {
 }
 
 var whiteList = []approved{
-	// confirmed with nnsgmsone
+	// the following 3 recover() calls have been confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Compile"},
-	// confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Run"},
-	// confirmed with nnsgmsone
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
+	// https://github.com/matrixorigin/matrixone/issues/2612
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Compile"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Run"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
