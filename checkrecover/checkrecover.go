@@ -53,6 +53,8 @@ var whiteList = []approved{
 	// https://github.com/matrixorigin/matrixone/issues/2612
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Compile"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Run"},
+	// https://github.com/matrixorigin/matrixone/issues/2764
+	{"github.com/matrixorigin/matrixone/pkg/frontend.mysql_cmd_executor", "ExecRequest"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
