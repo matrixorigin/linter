@@ -55,6 +55,8 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Run"},
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
+	// https://github.com/matrixorigin/matrixone/issues/2784
+	{"github.com/matrixorigin/matrixone/pkg/vm/overload", "Run"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
