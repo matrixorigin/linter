@@ -29,6 +29,10 @@ var blockList = []BlockSpec{
 		MatchModule: "go.etcd.io/etcd",
 		UseInstead:  "go.etcd.io/etcd/v3",
 	},
+	{
+		MatchPath:  "io/ioutil",
+		UseInstead: "os",
+	},
 }
 
 type BlockSpec struct {
@@ -70,7 +74,6 @@ func run(pass *analysis.Pass) (any, error) {
 		packagesPkg := getPackagesPackage(path)
 
 		for _, spec := range blockList {
-
 			// match import path
 			if path == spec.MatchPath {
 				message := fmt.Sprintf("do not use package %s", spec.MatchPath)
