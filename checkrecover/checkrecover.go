@@ -53,10 +53,13 @@ var whiteList = []approved{
 	// https://github.com/matrixorigin/matrixone/issues/2612
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Compile"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile2.compile", "Run"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Compile"},
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
 	// https://github.com/matrixorigin/matrixone/issues/2784
 	{"github.com/matrixorigin/matrixone/pkg/vm/overload", "Run"},
+	// FIXME: the following recover doesn't make sense
+	{"github.com/matrixorigin/matrixone/pkg/common/stopper.Stopper", "doRunCancelableTask"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
