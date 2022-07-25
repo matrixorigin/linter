@@ -58,8 +58,6 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
 	// https://github.com/matrixorigin/matrixone/issues/2784
 	{"github.com/matrixorigin/matrixone/pkg/vm/overload", "Run"},
-	// FIXME: the following recover doesn't make sense
-	{"github.com/matrixorigin/matrixone/pkg/common/stopper.Stopper", "doRunCancelableTask"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
