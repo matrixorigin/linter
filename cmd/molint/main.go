@@ -15,6 +15,7 @@
 package main
 
 import (
+	"github.com/matrixorigin/linter/checklog"
 	"github.com/matrixorigin/linter/checkrecover"
 	"github.com/matrixorigin/linter/pkgblocklist"
 
@@ -25,5 +26,6 @@ func main() {
 	unitchecker.Main(
 		checkrecover.Analyzer,
 		pkgblocklist.Analyzer,
+		checklog.Analyzer,
 	)
 }
