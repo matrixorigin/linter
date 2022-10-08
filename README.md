@@ -29,3 +29,7 @@ It will fail when checking the frontend folder as recover() calls there are not 
 
 Block unwanted packages from importing.
 
+### checklog
+
+Check the usage of `log` package and `fmt.Print*` api to ensure it is only used by pre-approved methods and functions and unittest.
+
