@@ -26,8 +26,11 @@ import (
 	"strings"
 )
 
-const doc = "Tool to check the usage of log.Print() or fmt.Print() to ensure it is only used by pre-approved methods and functions. See https://....md for more details."
+const doc = "Tool to check the usage of log.*() or fmt.Print*() to ensure it is only used by pre-approved methods and functions."
 
+// Analyzer check usage of log.* and fmt.Print*() with following rules
+// - exclude *_test.go file
+// - exclude functions in whiteList4fmt
 var Analyzer = &analysis.Analyzer{
 	Name:     "checklog",
 	Doc:      doc,
@@ -81,7 +84,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 							panic("failed to identify method/function details")
 						}
 					}
-					if isWhiteListed(whiteList4Log, typeName, funcName) {
+					if isWhiteListed(whiteList4fmt, typeName, funcName) {
 						continue
 					}
 					pass.Reportf(n.Pos(), "unsafe log %s: in %s.%s()", function, typeName, funcName)
@@ -130,23 +133,28 @@ var blockFuncList = []functionSpec{
 	{Module: "fmt", Function: "Print"},
 	{Module: "fmt", Function: "Printf"},
 	{Module: "fmt", Function: "Println"},
-	{Module: "fmt", Function: "Fprint"},
-	{Module: "fmt", Function: "Fprintf"},
-	{Module: "fmt", Function: "Fprintln"},
 }
 
+// approved like
+// - struct{ package_path,            global_function }
+// - struct{ package_path.class_name, member_function }
 type approved struct {
 	receiverTypeName string
 	functionName     string
 }
 
-var whiteList4Log = []approved{
+// whiteList4fmt array of approved
+var whiteList4fmt = []approved{
+	// bin tool
 	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/goyacc`, `*`},
+	// version info
 	{`github.com/matrixorigin/matrixone/cmd/mo-service`, `maybePrintVersion`},
+	// example
 	{`.*/example`, `*`},
 	{`.*/example\..*`, `*`},
-	{`github.com/matrixorigin/matrixone/pkg/sql/plan/function/builtin/binary`, `makeDateFormat`},
-	{`github.com/matrixorigin/matrixone/pkg/txn/storage/memorystorage/memtable.PhysicalRow[K, V]`, `dump`},
+	// generated
+	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql`, `*`},
+	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql`, `*`},
 }
 
 func isWhiteListed(whiteList []approved, typeName string, functionName string) (match bool) {

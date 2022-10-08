@@ -16,7 +16,6 @@ func Test_isWhiteListed(t *testing.T) {
 		{
 			name: "normal",
 			args: args{
-
 				//getFunction type, func: 'github.com/matrixorigin/matrixone/pkg/sql/parsers/example', 'main'
 				//pkg/sql/parsers/example/eg_mysql.go:33:2: unsafe log fmt.Printf: in github.com/matrixorigin/matrixone/pkg/sql/parsers/example.main()
 				// -----
