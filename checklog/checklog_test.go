@@ -21,7 +21,7 @@ func Test_isWhiteListed(t *testing.T) {
 				// -----
 				// # github.com/matrixorigin/matrixone/pkg/util/trace/example
 				//getMethod type, func: 'github.com/matrixorigin/matrixone/pkg/util/trace/example.dummyStringWriter', 'WriteString'
-				whiteList:    whiteList4Log,
+				whiteList:    whiteList4fmt,
 				typeName:     "github.com/matrixorigin/matrixone/pkg/sql/parsers/example",
 				functionName: "main",
 			},
@@ -30,7 +30,7 @@ func Test_isWhiteListed(t *testing.T) {
 		{
 			name: "normal",
 			args: args{
-				whiteList:    whiteList4Log,
+				whiteList:    whiteList4fmt,
 				typeName:     "github.com/matrixorigin/matrixone/pkg/util/trace/example.dummyStringWriter",
 				functionName: "WriteString",
 			},

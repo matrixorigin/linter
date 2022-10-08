@@ -60,7 +60,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if node.Name != nil {
 				packagePath2Name[strings.Trim(node.Path.Value, `"`)] = node.Name.String()
 			}
-			for _, spec := range blockList {
+			for _, spec := range blockPackageList {
 				path := node.Path.Value
 				if path == spec.MatchPath {
 					if spec.PassTestFile && isTestFile(pass, n) {
@@ -104,7 +104,7 @@ type blockSpec struct {
 	PassTestFile bool
 }
 
-var blockList = []blockSpec{
+var blockPackageList = []blockSpec{
 	{
 		MatchPath:    "log",
 		UseInstead:   "github.com/matrixorigin/matrixone/pkg/logutil",
@@ -168,15 +168,6 @@ func isWhiteListed(whiteList []approved, typeName string, functionName string) (
 		}
 	}
 	return false
-}
-
-func isCallingBuiltInRecover(expr ast.Expr) bool {
-	if _, ok := expr.(*ast.SelectorExpr); ok {
-		return false
-	}
-	id, ok := expr.(*ast.Ident)
-
-	return ok && id.Name == "recover"
 }
 
 // getSelector parse X ast.Expr in ast.SelectorExpr.
