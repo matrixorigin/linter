@@ -46,16 +46,13 @@ type approved struct {
 }
 
 var whiteList = []approved{
-	// the following 3 recover() calls have been confirmed with nnsgmsone
-	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Compile"},
-	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Exec", "Run"},
-	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
-
+	// recover for pipeline building and pipeline running.
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Compile"},
+	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
+
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
-	// https://github.com/matrixorigin/matrixone/issues/2784
-	{"github.com/matrixorigin/matrixone/pkg/vm/overload", "Run"},
 
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "writeLoop"},
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "readLoop"},
