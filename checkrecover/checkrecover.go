@@ -51,8 +51,12 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
 
+
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
+
+    // transaction state management
+	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "executeStmt"},
 
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "writeLoop"},
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "readLoop"},
