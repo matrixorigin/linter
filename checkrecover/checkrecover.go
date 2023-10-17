@@ -48,14 +48,14 @@ type approved struct {
 var whiteList = []approved{
 	// recover for pipeline building and pipeline running.
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Compile"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "runOnce"},
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
-
 
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
 
-    // transaction state management
+	// transaction state management
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "executeStmt"},
 
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "writeLoop"},
