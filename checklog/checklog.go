@@ -18,13 +18,14 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"regexp"
+	"strconv"
+	"strings"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"regexp"
-	"strconv"
-	"strings"
 )
 
 const doc = "Tool to check the usage of log.*() or fmt.Print*() to ensure it is only used by pre-approved methods and functions."
@@ -160,6 +161,8 @@ var whiteList4fmt = []approved{
 	// generated
 	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql`, `*`},
 	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql`, `*`},
+	// mo-debug
+	{`github.com/matrixorigin/matrixone/cmd/mo-debug`, `*`},
 }
 
 func isWhiteListed(whiteList []approved, typeName string, functionName string) (match bool) {
