@@ -62,6 +62,9 @@ var whiteList = []approved{
 
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "writeLoop"},
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "readLoop"},
+
+	// recover for inpsect dn
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/rpc.Handle", "HandleInspectTN"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
