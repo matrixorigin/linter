@@ -65,6 +65,10 @@ var whiteList = []approved{
 
 	// recover for inpsect dn
 	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/rpc.Handle", "HandleInspectTN"},
+
+	// recover for catching error.
+	// we cannot change the Aliyun SDK interface, so throw and catch errors with panic and recover
+	{"github.com/matrixorigin/matrixone/pkg/fileservice", "catch"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
