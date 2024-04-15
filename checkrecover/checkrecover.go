@@ -55,6 +55,7 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile", "CnServerMessageHandler"},
 
 	// https://github.com/matrixorigin/matrixone/issues/2764
+	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "ExecRequest"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "commitTxnFunc"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "finishTxnFunc"},
