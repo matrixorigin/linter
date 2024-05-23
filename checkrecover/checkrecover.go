@@ -74,7 +74,7 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/fileservice", "catch"},
 
 	// temporary recover to location issue #16007
-	{"github.com/matrixorigin/matrixone/pkg/pb/status", "MarshalToSizedBuffer"},
+	{"github.com/matrixorigin/matrixone/pkg/pb/status.Session", "MarshalToSizedBuffer"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
