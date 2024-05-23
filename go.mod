@@ -1,4 +1,4 @@
-module github.com/matrixorigin/linter
+module github.com/volgariver6/linter
 
 go 1.19
 
