@@ -72,6 +72,9 @@ var whiteList = []approved{
 	// recover for catching error.
 	// we cannot change the Aliyun SDK interface, so throw and catch errors with panic and recover
 	{"github.com/matrixorigin/matrixone/pkg/fileservice", "catch"},
+
+	// temporary recover to location issue #16007
+	{"github.com/matrixorigin/matrixone/pkg/pb/status", "MarshalToSizedBuffer"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
