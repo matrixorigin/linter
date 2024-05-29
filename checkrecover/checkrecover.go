@@ -52,6 +52,9 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "MergeRun"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "ParallelRun"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "remoteRun"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "RemoteRun"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile", "CnServerMessageHandler"},
 
 	// https://github.com/matrixorigin/matrixone/issues/2764
