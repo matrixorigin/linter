@@ -50,6 +50,7 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Compile"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "runOnce"},
 	{"github.com/matrixorigin/matrixone/pkg/vm", "Run"},
+	{"github.com/matrixorigin/matrixone/pkg/vm/pipeline", "catchPanic"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "MergeRun"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "ParallelRun"},
