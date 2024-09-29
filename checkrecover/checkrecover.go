@@ -63,6 +63,10 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "ExecRequest"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "commitTxnFunc"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "finishTxnFunc"},
+	{"github.com/matrixorigin/matrixone/pkg/frontend", "ReadLoadLocalPacket"},
+	{"github.com/matrixorigin/matrixone/pkg/frontend", "Read"},
+	{"github.com/matrixorigin/matrixone/pkg/frontend", "ReadOnePayload"},
+	{"github.com/matrixorigin/matrixone/pkg/frontend", "AllocNewBlock"},
 
 	// transaction state management
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "executeStmt"},
