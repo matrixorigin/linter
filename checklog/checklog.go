@@ -80,20 +80,27 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		case *ast.CallExpr:
+			// $spec like: {fmt Println}
 			for _, spec := range blockFuncList {
+				// $function like 'fmt.Println'
 				function := getCallingFunction(node.Fun)
 				if function == spec.getFunction(packagePath2Name) && !isTestFile(pass, n) {
+					// $pass is a specific analyzer to a single Go package.
+					// $n is the function calling, including: filename, pos
 					typeName, funcName, ok := getMethodDetails(pass, n)
 					if !ok {
 						typeName, funcName, ok = getFunctionDetails(pass, n)
 						if !ok {
-							panic("failed to identify method/function details")
+							// example:
+							// pkg/vm/engine/tae/db/merge/simulation/simulation.go:46:3: unsafe log fmt.Println
+							pass.Reportf(n.Pos(), "uncatch log fuction: %s", function)
+							continue
 						}
 					}
 					if isWhiteListed(whiteList4fmt, typeName, funcName) {
 						continue
 					}
-					pass.Reportf(n.Pos(), "unsafe log %s: in %s.%s()", function, typeName, funcName)
+					pass.Reportf(n.Pos(), "uncatch log function: %s: in %s.%s()", function, typeName, funcName)
 				}
 			}
 		default:
@@ -230,7 +237,7 @@ func isTestFile(pass *analysis.Pass, node ast.Node) bool {
 
 func getMethodDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {
 	for _, file := range pass.Files {
-		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.Pos())
+		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.End())
 		if len(path) == 0 {
 			continue
 		}
@@ -249,7 +256,7 @@ func getMethodDetails(pass *analysis.Pass, node ast.Node) (string, string, bool)
 
 func getFunctionDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {
 	for _, file := range pass.Files {
-		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.Pos())
+		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.End())
 		if len(path) == 0 {
 			continue
 		}
