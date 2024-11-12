@@ -94,6 +94,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/txn_table.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model/tree.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/basemvccnode.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/database.go",
