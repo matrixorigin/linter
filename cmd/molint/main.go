@@ -17,8 +17,8 @@ package main
 import (
 	"github.com/matrixorigin/linter/checklog"
 	"github.com/matrixorigin/linter/checkrecover"
+	"github.com/matrixorigin/linter/checkunsafe"
 	"github.com/matrixorigin/linter/pkgblocklist"
-
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
@@ -27,5 +27,6 @@ func main() {
 		checkrecover.Analyzer,
 		pkgblocklist.Analyzer,
 		checklog.Analyzer,
+		checkunsafe.Analyzer,
 	)
 }
