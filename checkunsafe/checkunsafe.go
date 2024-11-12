@@ -16,6 +16,8 @@ var Analyzer = &analysis.Analyzer{
 var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/cmd/mo-service/debug.go",
 	"github.com/matrixorigin/matrixone/pkg/cnservice/server_query_test.go",
+    "github.com/matrixorigin/matrixone/pkg/common/malloc/stacktrace.go",
+	"github.com/matrixorigin/matrixone/pkg/common/hashtable/bucket.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/arena.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/skl.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap/_cgo_gotypes.go",
@@ -92,6 +94,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/txn_table.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model/tree.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/basemvccnode.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/database.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/metamvccnode.go",
