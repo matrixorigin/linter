@@ -14,6 +14,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var importWhiteList = []string{
+	"github.com/matrixorigin/matrixone/cmd/mo-service/debug.go",
 	"github.com/matrixorigin/matrixone/pkg/cnservice/server_query_test.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/arena.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/skl.go",
