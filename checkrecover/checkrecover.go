@@ -85,6 +85,9 @@ var whiteList = []approved{
 
 	// temporary recover to location issue #16007
 	{"github.com/matrixorigin/matrixone/pkg/pb/status.Session", "MarshalToSizedBuffer"},
+
+	// temporary recover to location issue #19755
+	{"github.com/matrixorigin/matrixone/pkg/util/export.bufferHolder", "getGenerateReq"},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
