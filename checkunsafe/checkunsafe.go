@@ -1,7 +1,6 @@
 package checkunsafe
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"golang.org/x/tools/go/analysis"
@@ -14,10 +13,11 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var importWhiteList = []string{
+	"github.com/matrixorigin/matrixone/cgo/_cgo_gotypes.go",
+	"github.com/matrixorigin/matrixone/cgo/lib.cgo1.go",
+	"github.com/matrixorigin/matrixone/cgo/lib.go",
 	"github.com/matrixorigin/matrixone/cmd/mo-service/debug.go",
 	"github.com/matrixorigin/matrixone/pkg/cnservice/server_query_test.go",
-    "github.com/matrixorigin/matrixone/pkg/common/malloc/stacktrace.go",
-	"github.com/matrixorigin/matrixone/pkg/common/hashtable/bucket.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/arena.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/skl.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap/_cgo_gotypes.go",
@@ -30,6 +30,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/inthashmap.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/iterator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/strhashmap.go",
+	"github.com/matrixorigin/matrixone/pkg/common/hashtable/bucket.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/checked_allocator.go",
@@ -38,6 +39,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_linux.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/profiler.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/read_only_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/stacktrace.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/unsafe.go",
 	"github.com/matrixorigin/matrixone/pkg/common/moprobe/probe.go",
 	"github.com/matrixorigin/matrixone/pkg/common/mpool/alloc.go",
@@ -93,9 +95,8 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_log.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/txn_table.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model/tree.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/txn_table.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/basemvccnode.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/database.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog/metamvccnode.go",
@@ -112,6 +113,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logstore/entry/desc.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail/service/session.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail/storage_usage.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model/tree.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tables/updates/mvcc.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/txn/txnimpl/basenode.go",
 }
@@ -141,7 +143,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if !importOK(specPath) {
 				pass.Reportf(
 					imp.Pos(),
-					fmt.Sprintf("importing the unsafe package is not allowed in this file"),
+					"importing the unsafe package is not allowed in this file: %v",
+					specPath,
 				)
 			}
 		}
