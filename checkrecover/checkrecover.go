@@ -79,6 +79,7 @@ var whiteList = []approved{
 
 	// recover for inpsect dn
 	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/rpc.Handle", "HandleInspectTN"},
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tasks.CancelableJob", "Start"},
 
 	// recover for catching error.
 	// we cannot change the Aliyun SDK interface, so throw and catch errors with panic and recover
