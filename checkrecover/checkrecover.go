@@ -70,6 +70,7 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/frontend.Conn", "ExecuteFuncWithRecover"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "ExecuteFuncWithRecover"},
 	{"github.com/matrixorigin/matrixone/pkg/frontend", "executeStmtWithWorkspace"},
+	{"github.com/matrixorigin/matrixone/pkg/frontend", "isConnected"},
 
 	// transaction state management
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "executeStmt"},
