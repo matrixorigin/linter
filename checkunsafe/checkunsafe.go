@@ -35,6 +35,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator_linux.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/checked_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/fixed_size_mimalloc_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/fixed_size_mmap_allocator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/managed_allocator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_linux.go",
