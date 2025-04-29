@@ -84,6 +84,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/sql/compile/remoterun.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/mysql_sql.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql/postgresql_sql.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/cxcall.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_builtin.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_cast.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_unary.go",
