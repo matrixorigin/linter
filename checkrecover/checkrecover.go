@@ -57,6 +57,7 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "remoteRun"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "RemoteRun"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile", "CnServerMessageHandler"},
+	{"github.com/matrixorigin/matrixone/pkg/queryservice", "RequestMultipleCn"},
 
 	// https://github.com/matrixorigin/matrixone/issues/2764
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "ExecRequest"},
