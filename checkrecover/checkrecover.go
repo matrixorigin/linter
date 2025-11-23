@@ -76,6 +76,9 @@ var whiteList = []approved{
 	// transaction state management
 	{"github.com/matrixorigin/matrixone/pkg/frontend.MysqlCmdExecutor", "executeStmt"},
 
+	// cdc related
+	{"github.com/matrixorigin/matrixone/pkg/cdc.TableDetector", "processCallback"},
+
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "writeLoop"},
 	{"github.com/matrixorigin/matrixone/pkg/common/morpc.remoteBackend", "readLoop"},
 
