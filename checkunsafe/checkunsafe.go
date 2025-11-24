@@ -122,6 +122,9 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model/tree.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tables/updates/mvcc.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/txn/txnimpl/basenode.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_darwin.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/hash_arm64.go",
+	"github.com/matrixorigin/matrixone/pkg/objectio/meminfo_darwin.go",
 }
 
 var importOK = func() func(path string) bool {
