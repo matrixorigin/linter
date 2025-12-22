@@ -46,7 +46,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/stacktrace.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/unsafe.go",
 	"github.com/matrixorigin/matrixone/pkg/common/moprobe/probe.go",
-	"github.com/matrixorigin/matrixone/pkg/common/mpool/alloc.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/ptrlen.go",
 	"github.com/matrixorigin/matrixone/pkg/common/mpool/mpool.go",
 	"github.com/matrixorigin/matrixone/pkg/common/reuse/checker.go",
 	"github.com/matrixorigin/matrixone/pkg/common/reuse/factory.go",
