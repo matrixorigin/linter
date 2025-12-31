@@ -84,6 +84,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/objectio/meta.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/name.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/utils.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/aggexec/stateSize.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/compile/remoterun.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/mysql_sql.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql/postgresql_sql.go",
