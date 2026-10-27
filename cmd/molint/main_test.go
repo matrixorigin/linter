@@ -52,10 +52,10 @@ func TestVetToolReportsFindings(t *testing.T) {
 	}
 
 	tests := []struct {
-		name, source, want string
-		module, file       string
-		wantCount          int
-		failDriver         bool
+		name, source, want   string
+		module, file, driver string
+		wantCount            int
+		transient            bool
 	}{
 		{name: "clean", source: "package fixture\n"},
 		{name: "blocked import", source: "package fixture\nimport _ \"io/ioutil\"\n", want: "do not use package io/ioutil"},
@@ -86,11 +86,14 @@ func TestVetToolReportsFindings(t *testing.T) {
 		{name: "alias named like approved receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype unrelated struct{}\ntype remoteBackend = unrelated\nfunc (*remoteBackend) writeLoop() { recover() }\n", want: "unsafe recover() found"},
 		{name: "recover in test file", file: "fixture_test.go", source: "package fixture\nfunc f() { recover() }\n"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
-		{name: "loader failure", source: "package fixture\nimport _ \"fmt\"\n", want: "injected loader failure", failDriver: true},
+		{name: "loader failure", source: "package fixture\nimport _ \"fmt\"\n", want: "injected loader failure", driver: "#!/bin/sh\necho injected loader failure >&2\nexit 1\n"},
+		{name: "empty loader response", source: "package fixture\nimport _ \"fmt\"\n", want: "no package returned", driver: "#!/bin/sh\nprintf '%s\\n' '{\"Roots\":[],\"Packages\":[]}'\n"},
+		{name: "package metadata error", source: "package fixture\nimport _ \"fmt\"\n", want: "injected package metadata failure", driver: "#!/bin/sh\nprintf '%s\\n' '{\"Roots\":[\"fmt\"],\"Packages\":[{\"ID\":\"fmt\",\"PkgPath\":\"fmt\",\"Errors\":[{\"Msg\":\"injected package metadata failure\",\"Kind\":1}]}]}'\n"},
+		{name: "transient loader recovery", source: "package fixture\nimport _ \"fmt\"\n// transient loader\n", want: "injected transient loader failure", transient: true, driver: "#!/bin/sh\nprintf x >> driver-calls\nif [ ! -e driver-failed ]; then : > driver-failed; echo injected transient loader failure >&2; exit 1; fi\nprintf '%s\\n' '{\"Roots\":[\"fmt\"],\"Packages\":[{\"ID\":\"fmt\",\"PkgPath\":\"fmt\"}]}'\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.failDriver && runtime.GOOS == "windows" {
+			if tc.driver != "" && runtime.GOOS == "windows" {
 				t.Skip("fixture driver is a shell script")
 			}
 			dir := t.TempDir()
@@ -110,9 +113,9 @@ func TestVetToolReportsFindings(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if tc.failDriver {
+			if tc.driver != "" {
 				driver := filepath.Join(dir, "driver")
-				if err := os.WriteFile(driver, []byte("#!/bin/sh\necho injected loader failure >&2\nexit 1\n"), 0o700); err != nil {
+				if err := os.WriteFile(driver, []byte(tc.driver), 0o700); err != nil {
 					t.Fatal(err)
 				}
 				t.Setenv("GOPACKAGESDRIVER", driver)
@@ -128,17 +131,27 @@ func TestVetToolReportsFindings(t *testing.T) {
 				if contextErr != nil {
 					t.Fatalf("vet timed out: %v\n%s", contextErr, out)
 				}
-				if !tc.failDriver && strings.Contains(string(out), "panic:") {
+				if strings.Contains(string(out), "panic:") {
 					t.Fatalf("analyzer panicked:\n%s", out)
 				}
-				if tc.want == "" && !tc.failDriver {
+				if tc.transient && attempt == 1 {
+					if err != nil {
+						t.Fatalf("recovered loader failed: %v\n%s", err, out)
+					}
+					calls, err := os.ReadFile(filepath.Join(dir, "driver-calls"))
+					if err != nil || string(calls) != "xx" {
+						t.Fatalf("loader was not retried after failure: calls=%q err=%v", calls, err)
+					}
+					continue
+				}
+				if tc.want == "" {
 					if err != nil {
 						t.Fatalf("clean fixture failed: %v\n%s", err, out)
 					}
 					continue
 				}
 				if err == nil {
-					t.Fatalf("expected vet failure, got success:\n%s", out)
+					t.Fatalf("attempt %d: expected vet failure, got success:\n%s", attempt+1, out)
 				}
 				if !strings.Contains(string(out), tc.want) {
 					t.Fatalf("missing diagnostic %q:\n%s", tc.want, out)
@@ -168,6 +181,18 @@ func TestVetToolReportsFindings(t *testing.T) {
 				entries := diagnostics["example.org/molint-fixture"]["pkgblocklist"]
 				if len(entries) != 1 || !strings.Contains(entries[0].Message, tc.want) {
 					t.Fatalf("unexpected pkgblocklist diagnostics: %+v", entries)
+				}
+			}
+			if tc.name == "empty loader response" {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				cmd := exec.CommandContext(ctx, goCommand, "vet", "-json", "-vettool="+tool, "./...")
+				cmd.WaitDelay = 5 * time.Second
+				cmd.Dir = dir
+				out, err := cmd.CombinedOutput()
+				contextErr := ctx.Err()
+				cancel()
+				if contextErr != nil || err == nil || !strings.Contains(string(out), tc.want) {
+					t.Fatalf("JSON-mode loader failure: context=%v err=%v\n%s", contextErr, err, out)
 				}
 			}
 		})

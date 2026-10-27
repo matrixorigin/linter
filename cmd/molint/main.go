@@ -15,18 +15,38 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/matrixorigin/linter/checklog"
 	"github.com/matrixorigin/linter/checkrecover"
 	"github.com/matrixorigin/linter/checkunsafe"
 	"github.com/matrixorigin/linter/pkgblocklist"
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
+// An analyzer error in unitchecker's JSON mode exits successfully. Go vet can
+// cache the facts before processing that error, making a retry falsely pass.
+// Fail the vettool process at the command boundary so failed runs are retried.
+func failOnError(a *analysis.Analyzer) *analysis.Analyzer {
+	wrapped := *a
+	wrapped.Run = func(pass *analysis.Pass) (any, error) {
+		result, err := a.Run(pass)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "molint: %s: %v\n", a.Name, err)
+			os.Exit(1)
+		}
+		return result, nil
+	}
+	return &wrapped
+}
+
 func main() {
 	unitchecker.Main(
-		checkrecover.Analyzer,
-		pkgblocklist.Analyzer,
-		checklog.Analyzer,
-		checkunsafe.Analyzer,
+		failOnError(checkrecover.Analyzer),
+		failOnError(pkgblocklist.Analyzer),
+		failOnError(checklog.Analyzer),
+		failOnError(checkunsafe.Analyzer),
 	)
 }

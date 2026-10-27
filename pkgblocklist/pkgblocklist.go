@@ -49,21 +49,27 @@ var Analyzer = &analysis.Analyzer{
 
 var packagesPackages sync.Map // import path -> *packages.Package
 
-func getPackagesPackage(importPath string) *packages.Package {
+func getPackagesPackage(importPath string) (*packages.Package, error) {
 	v, ok := packagesPackages.Load(importPath)
 	if ok {
-		return v.(*packages.Package)
+		return v.(*packages.Package), nil
 	}
 	cfg := &packages.Config{
 		Mode: packages.NeedModule,
 	}
 	pkgs, err := packages.Load(cfg, importPath)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("load metadata for %s: %w", importPath, err)
+	}
+	if len(pkgs) == 0 || pkgs[0] == nil {
+		return nil, fmt.Errorf("load metadata for %s: no package returned", importPath)
 	}
 	pkg := pkgs[0]
+	if len(pkg.Errors) != 0 {
+		return nil, fmt.Errorf("load metadata for %s: %w", importPath, pkg.Errors[0])
+	}
 	packagesPackages.Store(importPath, pkg)
-	return pkg
+	return pkg, nil
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -71,7 +77,10 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, dep := range pass.Pkg.Imports() {
 
 		path := dep.Path()
-		packagesPkg := getPackagesPackage(path)
+		packagesPkg, err := getPackagesPackage(path)
+		if err != nil {
+			return nil, err
+		}
 
 		for _, spec := range blockList {
 			// match import path
