@@ -54,6 +54,7 @@ func TestVetToolReportsFindings(t *testing.T) {
 	tests := []struct {
 		name, source, want string
 		module, file       string
+		wantCount          int
 		failDriver         bool
 	}{
 		{name: "clean", source: "package fixture\n"},
@@ -65,6 +66,25 @@ func TestVetToolReportsFindings(t *testing.T) {
 		{name: "allowed raw unsafe import", module: "github.com/matrixorigin/matrixone/pkg/common/util", file: "unsafe.go", source: "package fixture\nimport _ `unsafe`\n"},
 		{name: "allowed escaped unsafe import", module: "github.com/matrixorigin/matrixone/pkg/common/util", file: "unsafe.go", source: "package fixture\nimport _ \"\\x75nsafe\"\n"},
 		{name: "recover", source: "package fixture\nfunc f() { recover() }\n", want: "unsafe recover() found"},
+		{name: "parenthesized recover", source: "package fixture\nfunc f() { ((recover))() }\n", want: "unsafe recover() found"},
+		{name: "shadowed package recover", source: "package fixture\nfunc recover() {}\nfunc f() { recover() }\n"},
+		{name: "shadowed local recover", source: "package fixture\nfunc f() { recover := func() {}; (recover)() }\n"},
+		{name: "shadowed parameter recover", source: "package fixture\nfunc f(recover func()) { recover() }\n"},
+		{name: "builtin and shadowed recover", source: "package fixture\nfunc f() { recover(); { recover := func() {}; recover() } }\n", want: "unsafe recover() found", wantCount: 1},
+		{name: "generic recover", source: "package fixture\nfunc recover[T any]() {}\nfunc f() { recover[int]() }\n"},
+		{name: "selector recover", source: "package fixture\ntype T struct{}\nfunc (T) recover() {}\nfunc f(t T) { t.recover() }\n"},
+		{name: "recover in initializer", source: "package fixture\nvar x = (recover)()\n", want: "unsafe recover() found"},
+		{name: "recover in initializer closure", source: "package fixture\nvar x = func() any { return recover() }()\n", want: "unsafe recover() found"},
+		{name: "recover in value method", source: "package fixture\ntype T struct{}\nfunc (T) f() { recover() }\n", want: "unsafe recover() found"},
+		{name: "recover in pointer method", source: "package fixture\ntype T struct{}\nfunc (*T) f() { recover() }\n", want: "unsafe recover() found"},
+		{name: "approved recover", module: "github.com/matrixorigin/matrixone/pkg/fileservice", source: "package fixture\nfunc catch() { recover() }\n"},
+		{name: "approved value alias receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype remoteBackend struct{}\ntype Alias = remoteBackend\nfunc (Alias) writeLoop() { recover() }\n"},
+		{name: "approved pointer alias receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype remoteBackend struct{}\ntype Alias = remoteBackend\nfunc (*Alias) writeLoop() { recover() }\n"},
+		{name: "approved alias of pointer receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype remoteBackend struct{}\ntype Alias = *remoteBackend\nfunc (Alias) writeLoop() { recover() }\n"},
+		{name: "approved generic receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype remoteBackend[T any] struct{}\nfunc (remoteBackend[T]) writeLoop() { recover() }\n"},
+		{name: "unapproved alias receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype remoteBackend struct{}\ntype Alias = remoteBackend\nfunc (Alias) other() { recover() }\n", want: "unsafe recover() found"},
+		{name: "alias named like approved receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype unrelated struct{}\ntype remoteBackend = unrelated\nfunc (*remoteBackend) writeLoop() { recover() }\n", want: "unsafe recover() found"},
+		{name: "recover in test file", file: "fixture_test.go", source: "package fixture\nfunc f() { recover() }\n"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
 		{name: "loader failure", source: "package fixture\nimport _ \"fmt\"\n", want: "injected loader failure", failDriver: true},
 	}
@@ -108,6 +128,9 @@ func TestVetToolReportsFindings(t *testing.T) {
 				if contextErr != nil {
 					t.Fatalf("vet timed out: %v\n%s", contextErr, out)
 				}
+				if !tc.failDriver && strings.Contains(string(out), "panic:") {
+					t.Fatalf("analyzer panicked:\n%s", out)
+				}
 				if tc.want == "" && !tc.failDriver {
 					if err != nil {
 						t.Fatalf("clean fixture failed: %v\n%s", err, out)
@@ -119,6 +142,9 @@ func TestVetToolReportsFindings(t *testing.T) {
 				}
 				if !strings.Contains(string(out), tc.want) {
 					t.Fatalf("missing diagnostic %q:\n%s", tc.want, out)
+				}
+				if tc.wantCount > 0 && strings.Count(string(out), tc.want) != tc.wantCount {
+					t.Fatalf("expected %d occurrences of %q:\n%s", tc.wantCount, tc.want, out)
 				}
 			}
 			if tc.name == "blocked import" {
