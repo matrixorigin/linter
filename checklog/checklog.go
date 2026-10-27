@@ -61,7 +61,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		case *ast.ImportSpec:
 			path, err := strconv.Unquote(node.Path.Value)
 			if err != nil {
-				fmt.Errorf("[warn] failed to unquote: %s\n", node.Path.Value)
 				path = strings.Trim(node.Path.Value, `"`)
 			}
 			if node.Name != nil {
@@ -76,7 +75,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					if spec.UseInstead != "" {
 						message += fmt.Sprintf(", use %s instead", spec.UseInstead)
 					}
-					pass.Reportf(n.Pos(), message)
+					pass.Reportf(n.Pos(), "%s", message)
 				}
 			}
 		case *ast.CallExpr:

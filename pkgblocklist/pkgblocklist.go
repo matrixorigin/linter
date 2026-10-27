@@ -80,7 +80,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if spec.UseInstead != "" {
 					message += fmt.Sprintf(", use %s instead", spec.UseInstead)
 				}
-				pass.Reportf(0, message)
+				pass.Reportf(0, "%s", message)
 			}
 
 			// match module path
@@ -91,7 +91,7 @@ func run(pass *analysis.Pass) (any, error) {
 					if spec.UseInstead != "" {
 						message += fmt.Sprintf(", use %s instead", spec.UseInstead)
 					}
-					pass.Reportf(0, message)
+					pass.Reportf(0, "%s", message)
 				}
 			}
 

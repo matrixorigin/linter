@@ -130,7 +130,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					typeName,
 					funcName,
 				)
-				pass.Reportf(node.Pos(), msg)
+				pass.Reportf(node.Pos(), "%s", msg)
 			}
 		}
 	})

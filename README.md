@@ -4,6 +4,8 @@ This repo contains custom linters developed by MatrixOrigin.
 
 ## Installation
 
+Building the current version requires Go 1.24 or later.
+
 ```
 go install github.com/matrixorigin/linter/cmd/molint@latest
 ```
