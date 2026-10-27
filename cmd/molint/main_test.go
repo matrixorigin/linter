@@ -53,11 +53,17 @@ func TestVetToolReportsFindings(t *testing.T) {
 
 	tests := []struct {
 		name, source, want string
+		module, file       string
 		failDriver         bool
 	}{
 		{name: "clean", source: "package fixture\n"},
 		{name: "blocked import", source: "package fixture\nimport _ \"io/ioutil\"\n", want: "do not use package io/ioutil"},
 		{name: "unsafe import", source: "package fixture\nimport _ \"unsafe\"\n", want: "importing the unsafe package is not allowed"},
+		{name: "raw unsafe import", source: "package fixture\nimport _ `unsafe`\n", want: "importing the unsafe package is not allowed"},
+		{name: "escaped unsafe import", source: "package fixture\nimport _ \"\\x75nsafe\"\n", want: "importing the unsafe package is not allowed"},
+		{name: "allowed unsafe import", module: "github.com/matrixorigin/matrixone/pkg/common/util", file: "unsafe.go", source: "package fixture\nimport _ \"unsafe\"\n"},
+		{name: "allowed raw unsafe import", module: "github.com/matrixorigin/matrixone/pkg/common/util", file: "unsafe.go", source: "package fixture\nimport _ `unsafe`\n"},
+		{name: "allowed escaped unsafe import", module: "github.com/matrixorigin/matrixone/pkg/common/util", file: "unsafe.go", source: "package fixture\nimport _ \"\\x75nsafe\"\n"},
 		{name: "recover", source: "package fixture\nfunc f() { recover() }\n", want: "unsafe recover() found"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
 		{name: "loader failure", source: "package fixture\nimport _ \"fmt\"\n", want: "injected loader failure", failDriver: true},
@@ -68,9 +74,17 @@ func TestVetToolReportsFindings(t *testing.T) {
 				t.Skip("fixture driver is a shell script")
 			}
 			dir := t.TempDir()
+			module := tc.module
+			if module == "" {
+				module = "example.org/molint-fixture"
+			}
+			file := tc.file
+			if file == "" {
+				file = "fixture.go"
+			}
 			for name, content := range map[string]string{
-				"go.mod":     "module example.org/molint-fixture\n\ngo 1.24\n",
-				"fixture.go": tc.source,
+				"go.mod": "module " + module + "\n\ngo 1.24\n",
+				file:     tc.source,
 			} {
 				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 					t.Fatal(err)

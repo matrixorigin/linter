@@ -1,7 +1,9 @@
 package checkunsafe
 
 import (
+	"path"
 	"path/filepath"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -157,11 +159,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		pos := pass.Fset.Position(file.FileStart)
 		fileName := filepath.Base(pos.Filename)
 		for _, imp := range file.Imports {
-			path := imp.Path.Value
-			if path != `"unsafe"` {
+			importPath, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				return nil, err
+			}
+			if importPath != "unsafe" {
 				continue
 			}
-			specPath := filepath.Join(pass.Pkg.Path(), fileName)
+			specPath := path.Join(pass.Pkg.Path(), fileName)
 			if !importOK(specPath) {
 				pass.Reportf(
 					imp.Pos(),
