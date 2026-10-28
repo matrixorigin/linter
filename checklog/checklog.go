@@ -61,7 +61,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		case *ast.ImportSpec:
 			path, err := strconv.Unquote(node.Path.Value)
 			if err != nil {
-				fmt.Errorf("[warn] failed to unquote: %s\n", node.Path.Value)
 				path = strings.Trim(node.Path.Value, `"`)
 			}
 			if node.Name != nil {
@@ -76,7 +75,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					if spec.UseInstead != "" {
 						message += fmt.Sprintf(", use %s instead", spec.UseInstead)
 					}
-					pass.Reportf(n.Pos(), message)
+					pass.Reportf(n.Pos(), "%s", message)
 				}
 			}
 		case *ast.CallExpr:
@@ -170,6 +169,12 @@ var whiteList4fmt = []approved{
 	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql`, `*`},
 	// mo-debug
 	{`github.com/matrixorigin/matrixone/cmd/mo-debug`, `*`},
+	// Opt-in regexp2 engine tracing preserves the upstream Debug output.
+	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `scan`},
+	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `backtrack`},
+	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `dumpState`},
+	// This standalone E2E command prints its report location for its caller.
+	{`^github[.]com/matrixorigin/matrixone/test/kafkaconnect$`, `runMain`},
 }
 
 func isWhiteListed(whiteList []approved, typeName string, functionName string) (match bool) {
