@@ -148,6 +148,12 @@ func TestCheck(t *testing.T) {
 		{name: "alias named like approved receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype unrelated struct{}\ntype remoteBackend = unrelated\nfunc (*remoteBackend) writeLoop() { recover() }\n", want: "unsafe recover() found"},
 		{name: "recover in test file", file: "fixture_test.go", source: "package fixture\nfunc f() { recover() }\n"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "logging exact approved package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n"},
+		{name: "logging approved package value receiver", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nimport \"fmt\"\ntype T struct{}\nfunc (T) f() { fmt.Println(1) }\n"},
+		{name: "logging adjacent package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql_extra", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "logging child package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/unaudited", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "historic cgo source approved", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.go", source: "package fixture\nimport \"C\"\nimport _ \"unsafe\"\n"},
+		{name: "historic cgo cooked name not approved", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.cgo1.go", source: "package fixture\nimport _ \"unsafe\"\n", want: "importing the unsafe package"},
 		{name: "clean cgo", source: "package fixture\nimport \"C\"\n"},
 		{name: "authored unsafe in cgo", source: "package fixture\nimport \"C\"\nimport _ `unsafe`\n", want: "importing the unsafe package", wantCount: 1},
 		{name: "allowed cgo import", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.go", source: "package fixture\nimport \"C\"\nimport _ \"unsafe\"\n"},
@@ -222,6 +228,82 @@ func TestCheck(t *testing.T) {
 			}
 		}
 	})
+	t.Run("facts-only cache cannot hide selected diagnostics", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":         "module example.org/facts-cache\ngo 1.24\n",
+			"fixture.go":     "package fixture\nimport _ \"example.org/facts-cache/dep\"\n",
+			"dep/dep.go":     "package dep\nfunc Bad() { recover() }\n",
+			"other/other.go": "package other\n",
+		})
+		if code, out := runTool(t, dir, tool, "check", "."); code != 0 {
+			t.Fatalf("dependency must not be selected: %d %s", code, out)
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			code, out := runTool(t, dir, tool, "check", "./dep", "./other")
+			if code != 1 || !strings.Contains(out, "unsafe recover") {
+				t.Fatalf("selected dependency attempt %d: %d %s", attempt, code, out)
+			}
+		}
+		if code, out := runTool(t, dir, tool, "check", "./dep"); code != 1 || !strings.Contains(out, "unsafe recover") {
+			t.Fatalf("selected dependency alone: %d %s", code, out)
+		}
+		for _, args := range [][]string{{".", "./dep"}, {"./dep", "."}} {
+			code, out := runTool(t, dir, tool, append([]string{"check"}, args...)...)
+			if code != 1 || !strings.Contains(out, "unsafe recover") {
+				t.Fatalf("root and dependency %v: %d %s", args, code, out)
+			}
+		}
+	})
+	t.Run("incomplete vet output fails closed", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("requires a POSIX shell for the fake Go driver")
+		}
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod": "module example.org/incomplete\ngo 1.24\n",
+			"a/a.go": "package a\n",
+			"b/b.go": "package b\n",
+			"bin/go": "#!/bin/sh\nif [ \"$1\" = vet ]; then printf '{}\\n'; exit 0; fi\nexec \"$REAL_GO\" \"$@\"\n",
+		})
+		if err := os.Chmod(filepath.Join(dir, "bin/go"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("REAL_GO", goCommand)
+		t.Setenv("PATH", filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if code, out := runTool(t, dir, tool, "check", "./..."); code != 2 || !strings.Contains(out, "1 JSON results for 2 selected actions") {
+			t.Fatalf("partial vet results: %d %s", code, out)
+		}
+	})
+	t.Run("PGO dependency copies are not selected roots", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":      "module example.org/pgo\ngo 1.24\n",
+			"app/main.go": "package main\nimport \"example.org/pgo/dep\"\nfunc main() { dep.F() }\n",
+			// An empty profile is a valid Go PGO profile with no samples.
+			"app/default.pgo": "",
+			"dep/dep.go":      "package dep\nfunc F() {}\n",
+		})
+		for _, args := range [][]string{{"./..."}, {"./dep", "./app"}} {
+			if code, out := runTool(t, dir, tool, append([]string{"check"}, args...)...); code != 0 {
+				t.Fatalf("PGO selection %v: %d %s", args, code, out)
+			}
+		}
+	})
+	t.Run("test-only and builtin packages", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":             "module example.org/test-only\ngo 1.24\n",
+			"internal/x_test.go": "package internal\nimport _ \"unsafe\"\n",
+			"external/x_test.go": "package external_test\nimport _ \"unsafe\"\n",
+		})
+		if code, out := runTool(t, dir, tool, "check", "./..."); code != 1 || strings.Count(out, "importing the unsafe") != 2 {
+			t.Fatalf("test-only packages: %d %s", code, out)
+		}
+		if code, out := runTool(t, dir, tool, "check", "unsafe", "builtin"); code != 0 {
+			t.Fatalf("builtin packages: %d %s", code, out)
+		}
+	})
 	t.Run("literal ellipsis import", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFixture(t, dir, map[string]string{
@@ -236,6 +318,93 @@ func TestCheck(t *testing.T) {
 		}
 	})
 	t.Run("source selection and overlays", func(t *testing.T) { testSourceSelection(t, tool) })
+	t.Run("recover boundaries distinguish directly launched workers", func(t *testing.T) {
+		for _, tt := range []struct {
+			name, module, source string
+			want                 bool
+		}{
+			{"approved cleanup defer", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { defer func() { if v := recover(); v != nil { panic(v) } }() }", false},
+			{"unapproved launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go func() { defer func() { recover() }(); panic(1) }() }", true},
+			{"parenthesized launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go (func() { defer func() { recover() }(); panic(1) })() }", true},
+			{"converted launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "type worker func()\nfunc parseStmtExecute() { go worker(func() { defer func() { recover() }(); panic(1) })() }", true},
+			{"argument evaluated synchronously", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go func(any) {}(recover()) }", false},
+			{"reviewed worker", "github.com/matrixorigin/matrixone/pkg/fulltext2", "func fanOut() { go func() { defer func() { recover() }() }() }", false},
+			{"adjacent worker", "github.com/matrixorigin/matrixone/pkg/fulltext2", "func other() { go func() { defer func() { recover() }() }() }", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				dir := t.TempDir()
+				writeFixture(t, dir, map[string]string{"go.mod": "module " + tt.module + "\ngo 1.24\n", "x.go": "package fixture\n" + tt.source + "\n"})
+				code, out := runTool(t, dir, tool, "check", "-checkrecover", ".")
+				if (tt.want && (code != 1 || !strings.Contains(out, "unsafe recover"))) || (!tt.want && code != 0) {
+					t.Fatalf("got exit %d: %s", code, out)
+				}
+			})
+		}
+	})
+	t.Run("logging uses per-file typed identity", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod": "module example.com/fixture\n\ngo 1.24\n",
+			"a.go":   "package fixture\nimport f \"fmt\"\nfunc a() { _ = f.Sprintf(\"%s\", \"x\") }\n",
+			"b.go":   "package fixture\nimport \"fmt\"\nfunc b() { fmt.Println(1) }\n",
+			"c.go":   "package fixture\nimport . \"fmt\"\nfunc c() { Print(1) }\n",
+			"d.go":   "package fixture\ntype logger struct{}\nfunc (logger) Println(...any) {}\nfunc d(fmt logger) { fmt.Println(1) }\n",
+		})
+		code, out := runTool(t, dir, tool, "check", "-json", "-checklog", ".")
+		if code != 1 || strings.Count(out, "uncatch log function") != 2 {
+			t.Fatalf("expected two real fmt calls, got %d: %s", code, out)
+		}
+	})
+	t.Run("overlay keeps logical test identity", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":                   "module example.com/fixture\n\ngo 1.24\n",
+			"fixture.go":               "package fixture\n",
+			"fixture_test.go":          "package fixture\n",
+			".overlay/backing_test.go": "package fixture\nimport \"fmt\"\nfunc prod() { recover(); fmt.Println(1) }\n",
+			".overlay/backing.go":      "package fixture\nimport \"fmt\"\nfunc test() { recover(); fmt.Println(1) }\n",
+			"overlay.json":             `{"Replace":{"fixture.go":".overlay/backing_test.go","fixture_test.go":".overlay/backing.go"}}`,
+		})
+		for i := 0; i < 2; i++ {
+			code, out := runTool(t, dir, tool, "check", "-json", "-overlay=overlay.json", ".")
+			if code != 1 || strings.Count(out, "unsafe recover() found") != 1 || strings.Count(out, "uncatch log function") != 1 {
+				t.Fatalf("iteration %d: expected production findings only, got %d: %s", i, code, out)
+			}
+		}
+		writeFixture(t, dir, map[string]string{
+			".overlay/ordinary.go": "package fixture\nimport \"fmt\"\nfunc prod() { recover(); fmt.Println(1) }\n",
+			"overlay.json":         `{"Replace":{"fixture.go":".overlay/ordinary.go","fixture_test.go":".overlay/backing.go"}}`,
+		})
+		code, out := runTool(t, dir, tool, "check", "-json", "-overlay=overlay.json", ".")
+		if code != 1 || strings.Count(out, "unsafe recover() found") != 1 || strings.Count(out, "uncatch log function") != 1 || !strings.Contains(out, ".overlay/ordinary.go") || strings.Contains(out, ".overlay/backing_test.go") {
+			t.Fatalf("equal-content backing change: got %d: %s", code, out)
+		}
+		writeFixture(t, dir, map[string]string{
+			".overlay/shared.go": "package fixture\nfunc init() { recover() }\n",
+			"overlay.json":       `{"Replace":{"fixture.go":".overlay/shared.go","fixture_test.go":".overlay/shared.go"}}`,
+		})
+		code, out = runTool(t, dir, tool, "check", "-json", "-overlay=overlay.json", ".")
+		if code != 2 || !strings.Contains(out, "ambiguous test status") {
+			t.Fatalf("ambiguous mapping must fail closed, got %d: %s", code, out)
+		}
+	})
+	t.Run("cgo overlay is production", func(t *testing.T) {
+		if _, err := exec.LookPath("gcc"); err != nil {
+			t.Skip("C compiler unavailable")
+		}
+		t.Setenv("CGO_ENABLED", "1")
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":                   "module example.com/fixture\n\ngo 1.24\n",
+			"fixture.go":               "package fixture\nimport \"C\"\n",
+			".overlay/backing_test.go": "package fixture\nimport \"C\"\nimport \"fmt\"\nfunc prod() { recover(); fmt.Println(1) }\n",
+			"overlay.json":             `{"Replace":{"fixture.go":".overlay/backing_test.go"}}`,
+		})
+		code, out := runTool(t, dir, tool, "check", "-json", "-overlay=overlay.json", ".")
+		if code != 1 || !strings.Contains(out, "unsafe recover() found") || !strings.Contains(out, "uncatch log function") {
+			t.Fatalf("cgo overlay: got %d: %s", code, out)
+		}
+	})
 	t.Run("readonly replacements and actual Go driver", func(t *testing.T) { testModuleSelection(t, tool) })
 	t.Run("named files and empty selection", func(t *testing.T) {
 		dir := t.TempDir()
@@ -258,6 +427,18 @@ func TestCheck(t *testing.T) {
 			t.Fatalf("GOPATH: %d %s", code, out)
 		}
 	})
+	t.Run("relative temporary directory", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":    "module example.org/relative-tmp\ngo 1.24\n",
+			"sub/x.go":  "package sub\n",
+			"tmp/.keep": "",
+		})
+		t.Setenv("TMPDIR", "tmp")
+		if code, out := runTool(t, dir, tool, "check", "./sub"); code != 0 {
+			t.Fatalf("relative TMPDIR: %d %s", code, out)
+		}
+	})
 	t.Run("ordered per-package build flags", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFixture(t, dir, map[string]string{
@@ -273,6 +454,79 @@ func TestCheck(t *testing.T) {
 			if code != 2 || !strings.Contains(out, "go1.22") {
 				t.Fatalf("per-package language constraint lost: %d %s", code, out)
 			}
+		}
+	})
+	t.Run("analyzer selection from GOFLAGS", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":     "module example.org/goflags\ngo 1.24\n",
+			"fixture.go": "package fixture\nimport _ \"unsafe\"\nfunc f() { recover() }\n",
+		})
+		t.Setenv("GOFLAGS", "-p=2 -checkrecover")
+		code, out := runTool(t, dir, tool, "check", ".")
+		if code != 1 || !strings.Contains(out, "unsafe recover") || strings.Contains(out, "importing the unsafe") {
+			t.Fatalf("environment analyzer selection: %d %s", code, out)
+		}
+		code, out = runTool(t, dir, tool, "check", "-checkrecover=false", ".")
+		if code != 1 || strings.Contains(out, "unsafe recover") || !strings.Contains(out, "importing the unsafe") {
+			t.Fatalf("command-line analyzer override: %d %s", code, out)
+		}
+		goenv := filepath.Join(dir, "go.env")
+		writeFixture(t, dir, map[string]string{"go.env": "GOFLAGS=-checkrecover\n"})
+		t.Setenv("GOENV", goenv)
+		t.Setenv("GOFLAGS", "")
+		code, out = runTool(t, dir, tool, "check", ".")
+		if code != 1 || !strings.Contains(out, "unsafe recover") || strings.Contains(out, "importing the unsafe") {
+			t.Fatalf("persisted analyzer selection: %d %s", code, out)
+		}
+		writeFixture(t, dir, map[string]string{
+			"fixture.go":         "package fixture\n",
+			"overlay file.json":  `{"Replace":{"fixture.go":".overlay/source.go"}}`,
+			".overlay/source.go": "package fixture\nimport _ \"unsafe\"\n",
+		})
+		t.Setenv("GOENV", "off")
+		t.Setenv("GOFLAGS", "'-overlay=overlay file.json' -checkunsafe")
+		code, out = runTool(t, dir, tool, "check", ".")
+		if code != 1 || !strings.Contains(out, "importing the unsafe") {
+			t.Fatalf("quoted build flag and analyzer selection: %d %s", code, out)
+		}
+	})
+	t.Run("CGo dependency compiler warning", func(t *testing.T) {
+		dir := t.TempDir()
+		const warning = "molint_warning"
+		writeFixture(t, dir, map[string]string{
+			"go.mod":     "module example.org/cgowarning\ngo 1.24\n",
+			"fixture.go": "package fixture\nimport _ \"example.org/cgowarning/dep\"\nfunc f() { recover() }\n",
+			"dep/dep.go": "package dep\nimport \"C\"\n",
+			// The per-run directory changes the cache key so the cold run
+			// reliably exercises the compiler warning on repeated test runs.
+			"dep/dep.c": "#warning " + warning + "\nvoid f(void) {}\n// " + dir + "\n",
+		})
+		for attempt := 0; attempt < 2; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			cmd := exec.CommandContext(ctx, tool, "check", "-json", ".")
+			cmd.Dir = dir
+			cmd.WaitDelay = 5 * time.Second
+			ownCommand(cmd)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			out, err := cmd.Output()
+			ctxErr := ctx.Err()
+			cancel()
+			if ctxErr != nil {
+				t.Fatalf("attempt %d timed out: %v\n%s", attempt, ctxErr, &stderr)
+			}
+			var r results
+			if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 1 || json.Unmarshal(out, &r) != nil || r.Error != "" || !strings.Contains(string(out), "unsafe recover") {
+				t.Fatalf("attempt %d: error=%v stdout=%s stderr=%s", attempt, err, out, &stderr)
+			}
+			if attempt == 0 && !strings.Contains(stderr.String(), warning) {
+				t.Fatalf("compiler warning was not preserved: %s", &stderr)
+			}
+		}
+		writeFixture(t, dir, map[string]string{"fixture.go": "package fixture\nimport _ \"example.org/cgowarning/dep\"\n"})
+		if code, out := runTool(t, dir, tool, "check", "."); code != 0 {
+			t.Fatalf("clean package: %d %s", code, out)
 		}
 	})
 	t.Run("unsupported tracing and JSON usage errors", func(t *testing.T) {
@@ -299,8 +553,10 @@ func TestCheck(t *testing.T) {
 	t.Run("unsupported source generation", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFixture(t, dir, map[string]string{"go.mod": "module example.org/swig-fixture\ngo 1.24\n", "fixture.go": "package fixture\n", "fixture.swig": "%module fixture\n"})
-		if code, out := runTool(t, dir, tool, "check", "."); code != 2 || !strings.Contains(out, "SWIG") {
-			t.Fatalf("SWIG: %d %s", code, out)
+		for _, args := range [][]string{{"check", "."}, {"check", "-checkrecover", "."}} {
+			if code, out := runTool(t, dir, tool, args...); code != 2 || !strings.Contains(out, "SWIG") {
+				t.Fatalf("SWIG %v: %d %s", args, code, out)
+			}
 		}
 	})
 	t.Run("prerequisite error cannot publish cached success", func(t *testing.T) {

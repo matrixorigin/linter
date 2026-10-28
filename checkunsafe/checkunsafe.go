@@ -3,41 +3,30 @@ package checkunsafe
 import (
 	"fmt"
 	"path"
-	"strings"
 )
 
 var importWhiteList = []string{
-	"github.com/matrixorigin/matrixone/cgo/lib.cgo1.go",
 	"github.com/matrixorigin/matrixone/cgo/lib.go",
 	"github.com/matrixorigin/matrixone/cmd/mo-service/debug.go",
 	"github.com/matrixorigin/matrixone/pkg/cnservice/server_query_test.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/arena.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/skl.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap/bitmap.go",
-	"github.com/matrixorigin/matrixone/pkg/common/bitmap/cbitmap.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/cbloomfilter.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/util.go",
 	"github.com/matrixorigin/matrixone/pkg/common/buffer/buffer.go",
 	"github.com/matrixorigin/matrixone/pkg/common/buffer/chunk.go",
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/filter.go",
-	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cbitmap.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/docfilter/croaring.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/fastrand/fastrand.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/inthashmap.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/iterator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/strhashmap.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashtable/bucket.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator_linux.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/checked_allocator.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/fixed_size_mimalloc_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/fixed_size_mmap_allocator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/managed_allocator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_linux.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/profiler.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/read_only_allocator.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/sane_allocator.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/sane_allocator_linux.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/stacktrace.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/unsafe.go",
 	"github.com/matrixorigin/matrixone/pkg/common/moprobe/probe.go",
@@ -83,7 +72,6 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/sql/compile/remoterun.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/mysql_sql.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql/postgresql_sql.go",
-	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/cxcall.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_builtin.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_cast.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_unary.go",
@@ -97,7 +85,6 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_log.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search_test.go",
-	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/types.go",
@@ -191,6 +178,25 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/datastream/v1/datastream.pb.go",
 }
 
+// CGo approvals name the authored source, not its generated Go output.
+var cgoWhiteList = []string{
+	"github.com/matrixorigin/matrixone/cgo/lib.go",
+	"github.com/matrixorigin/matrixone/pkg/common/bitmap/cbitmap.go",
+	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/cbloomfilter.go",
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cbitmap.go",
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/croaring.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator_linux.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/fixed_size_mimalloc_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/sane_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/sane_allocator_linux.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/cxcall.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search.go",
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.go",
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.go",
+}
+
 var importOK = func() func(path string) bool {
 	m := make(map[string]bool)
 	for _, path := range importWhiteList {
@@ -201,23 +207,16 @@ var importOK = func() func(path string) bool {
 	}
 }()
 
-// Message checks an authored unsafe import. The command supplies the actual
-// source basename, independently of //line directives. Retain the existing
-// file-level authorizations for cgo sources under their former cooked names.
+// Message checks an authored unsafe import using its logical source and provenance.
 func Message(pkgPath, fileName string, cgo bool) string {
-	if cgo {
-		// New source approvals require this exact authored CGo file. They
-		// do not authorize an ordinary file named like a generated one.
-		switch path.Join(pkgPath, fileName) {
-		case "github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.go",
-			"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.go",
-			"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.go":
-			return ""
-		}
-		fileName = strings.TrimSuffix(fileName, ".go") + ".cgo1.go"
-	}
 	key := path.Join(pkgPath, fileName)
-	if importOK(key) {
+	if cgo {
+		for _, approved := range cgoWhiteList {
+			if approved == key {
+				return ""
+			}
+		}
+	} else if importOK(key) {
 		return ""
 	}
 	return fmt.Sprintf("importing the unsafe package is not allowed in this file: %s", key)
