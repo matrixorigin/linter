@@ -33,6 +33,7 @@ type options struct {
 	analyzers            map[string]bool
 	json                 bool
 	moduleMode           bool
+	childGOFLAGS         *string
 }
 
 // Build flags are forwarded, not interpreted. Go remains responsible for their
@@ -120,7 +121,7 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		return opts, fmt.Errorf("go env: %w", err)
 	}
 	opts.moduleMode = goEnv.GOMOD != ""
-	envFlags, err := splitGOFLAGS(goEnv.GOFLAGS)
+	envFlags, rawFlags, err := splitGOFLAGS(goEnv.GOFLAGS)
 	if err != nil {
 		return opts, err
 	}
@@ -140,6 +141,27 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 	}
 	if len(fs.Args()) != 0 {
 		return opts, errors.New("GOFLAGS must contain flags, not package arguments")
+	}
+	// Analyzer selection belongs to molint, not to go list or its internal
+	// typed vet. Preserve the original spelling of every Go-owned flag.
+	var goFlags []string
+	removed := false
+	for i, value := range envFlags {
+		name, _, _ := strings.Cut(strings.TrimLeft(value, "-"), "=")
+		if _, ok := selected[name]; ok {
+			removed = true
+			continue
+		}
+		goFlags = append(goFlags, rawFlags[i])
+	}
+	if removed {
+		value := strings.Join(goFlags, " ")
+		if value == "" {
+			// Go treats an empty environment value as unset and can fall back
+			// to a persisted GOFLAGS in its user environment file.
+			value = " "
+		}
+		opts.childGOFLAGS = &value
 	}
 	anyEnabled := false
 	fs.Visit(func(f *flag.Flag) {
@@ -161,15 +183,17 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 
 // GOFLAGS uses Go's quoted-word convention, not shell expansion: only a quote
 // at the beginning of a word is special, with no escapes inside that word.
-func splitGOFLAGS(value string) ([]string, error) {
+func splitGOFLAGS(value string) ([]string, []string, error) {
 	var fields []string
+	var raw []string
 	for value = strings.TrimLeft(value, " \t\r\n"); value != ""; value = strings.TrimLeft(value, " \t\r\n") {
 		if value[0] == '\'' || value[0] == '"' {
 			end := strings.IndexByte(value[1:], value[0])
 			if end < 0 {
-				return nil, errors.New("unterminated quote in GOFLAGS")
+				return nil, nil, errors.New("unterminated quote in GOFLAGS")
 			}
 			fields = append(fields, value[1:1+end])
+			raw = append(raw, value[:end+2])
 			value = value[end+2:]
 		} else {
 			end := strings.IndexAny(value, " \t\r\n")
@@ -177,10 +201,11 @@ func splitGOFLAGS(value string) ([]string, error) {
 				end = len(value)
 			}
 			fields = append(fields, value[:end])
+			raw = append(raw, value[:end])
 			value = value[end:]
 		}
 	}
-	return fields, nil
+	return fields, raw, nil
 }
 
 func (o options) readOverlay() (map[string]string, error) {

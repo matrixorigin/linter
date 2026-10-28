@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"strings"
 
+	"github.com/matrixorigin/linter/internal/sourcefile"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
@@ -213,7 +213,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			analysisErr = err
 			return
 		}
-		if isRecover && !isTestFile(pass, node) {
+		if isRecover && !sourcefile.IsTest(pass, node) {
 			typeName, funcName, ok := getMethodDetails(pass, node)
 			if !ok {
 				typeName, funcName, ok = getFunctionDetails(pass, node)
@@ -293,23 +293,4 @@ func isCallingBuiltInRecover(pass *analysis.Pass, expr ast.Expr) (bool, error) {
 		return false, fmt.Errorf("missing type information for recover at %s", pass.Fset.Position(id.Pos()))
 	}
 	return pass.TypesInfo.Uses[id] == types.Universe.Lookup("recover"), nil
-}
-
-func isTestFile(pass *analysis.Pass, node ast.Node) bool {
-	var file *ast.File
-	for _, f := range pass.Files {
-		if f.Pos() <= node.Pos() && node.Pos() < f.End() {
-			file = f
-			break
-		}
-	}
-	if file == nil {
-		panic("failed to locate the file")
-	}
-	tokenFile := pass.Fset.File(file.Pos())
-	if tokenFile == nil {
-		panic("token file is nil")
-	}
-
-	return strings.HasSuffix(tokenFile.Name(), "_test.go")
 }

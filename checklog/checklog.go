@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/matrixorigin/linter/internal/sourcefile"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
@@ -52,10 +53,13 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.ImportSpec)(nil),
 		(*ast.CallExpr)(nil),
 	}
-	packagePath2Name := make(map[string]string)
+	var runErr error
 	// this is basically the same as ast.Inspect(), only we don't return a
 	// boolean anymore as it'll visit all the nodes based on the filter.
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		if runErr != nil {
+			return
+		}
 
 		switch node := n.(type) {
 		case *ast.ImportSpec:
@@ -63,12 +67,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if err != nil {
 				path = strings.Trim(node.Path.Value, `"`)
 			}
-			if node.Name != nil {
-				packagePath2Name[path] = node.Name.String()
-			}
 			for _, spec := range blockPackageList {
 				if path == spec.MatchPath {
-					if spec.PassTestFile && isTestFile(pass, n) {
+					if spec.PassTestFile && sourcefile.IsTest(pass, n) {
 						continue
 					}
 					message := fmt.Sprintf("do not use package %s", spec.MatchPath)
@@ -79,34 +80,34 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		case *ast.CallExpr:
-			// $spec like: {fmt Println}
-			for _, spec := range blockFuncList {
-				// $function like 'fmt.Println'
-				function := getCallingFunction(node.Fun)
-				if function == spec.getFunction(packagePath2Name) && !isTestFile(pass, n) {
-					// $pass is a specific analyzer to a single Go package.
-					// $n is the function calling, including: filename, pos
-					typeName, funcName, ok := getMethodDetails(pass, n)
+			function, err := blockedFunction(pass, node.Fun)
+			if err != nil {
+				runErr = err
+				return
+			}
+			if function != "" && !sourcefile.IsTest(pass, n) {
+				// $pass is a specific analyzer to a single Go package.
+				// $n is the function calling, including: filename, pos
+				typeName, funcName, ok := getMethodDetails(pass, n)
+				if !ok {
+					typeName, funcName, ok = getFunctionDetails(pass, n)
 					if !ok {
-						typeName, funcName, ok = getFunctionDetails(pass, n)
-						if !ok {
-							// example:
-							// pkg/vm/engine/tae/db/merge/simulation/simulation.go:46:3: unsafe log fmt.Println
-							pass.Reportf(n.Pos(), "uncatch log fuction: %s", function)
-							continue
-						}
+						// example:
+						// pkg/vm/engine/tae/db/merge/simulation/simulation.go:46:3: unsafe log fmt.Println
+						pass.Reportf(n.Pos(), "uncatch log fuction: %s", function)
+						return
 					}
-					if isWhiteListed(whiteList4fmt, typeName, funcName) {
-						continue
-					}
-					pass.Reportf(n.Pos(), "uncatch log function: %s: in %s.%s()", function, typeName, funcName)
 				}
+				if isWhiteListed(whiteList4fmt, typeName, funcName) {
+					return
+				}
+				pass.Reportf(n.Pos(), "uncatch log function: %s: in %s.%s()", function, typeName, funcName)
 			}
 		default:
 			return
 		}
 	})
-	return nil, nil
+	return nil, runErr
 }
 
 type blockSpec struct {
@@ -124,27 +125,27 @@ var blockPackageList = []blockSpec{
 	},
 }
 
-type functionSpec struct {
-	Module   string // like: fmt
-	Function string // like: Printf
-}
-
-func (spec functionSpec) getFunction(pkgAlias map[string]string) string {
-	if len(spec.Module) == 0 {
-		return spec.Function
-	} else {
-		var moduleSelector = spec.Module
-		if val, ok := pkgAlias[spec.Module]; ok {
-			moduleSelector = val
-		}
-		return moduleSelector + "." + spec.Function
+func blockedFunction(pass *analysis.Pass, expr ast.Expr) (string, error) {
+	var id *ast.Ident
+	switch expr := ast.Unparen(expr).(type) {
+	case *ast.Ident:
+		id = expr
+	case *ast.SelectorExpr:
+		id = expr.Sel
+	default:
+		return "", nil
 	}
-}
-
-var blockFuncList = []functionSpec{
-	{Module: "fmt", Function: "Print"},
-	{Module: "fmt", Function: "Printf"},
-	{Module: "fmt", Function: "Println"},
+	if id.Name != "Print" && id.Name != "Printf" && id.Name != "Println" {
+		return "", nil
+	}
+	if pass.TypesInfo == nil || pass.TypesInfo.Uses[id] == nil {
+		return "", fmt.Errorf("missing type information for %s at %s", id.Name, pass.Fset.Position(id.Pos()))
+	}
+	fn, ok := pass.TypesInfo.Uses[id].(*types.Func)
+	if ok && fn.Pkg() != nil && fn.Pkg().Path() == "fmt" && fn.Parent() == fn.Pkg().Scope() {
+		return "fmt." + id.Name, nil
+	}
+	return "", nil
 }
 
 // approved like
@@ -188,56 +189,6 @@ func isWhiteListed(whiteList []approved, typeName string, functionName string) (
 		}
 	}
 	return false
-}
-
-// getSelector parse X ast.Expr in ast.SelectorExpr.
-// like:         a.Func1()
-// - or:       a.b.Func2()
-// - or:  a.arr[0].Func3()
-// -------------- | -------
-// -            X | Sel
-func getSelector(xExpr ast.Expr) (selector string) {
-	if id, ok := xExpr.(*ast.Ident); ok {
-		selector = id.Name
-	} else if se, ok := xExpr.(*ast.SelectorExpr); ok {
-		selector = getSelector(se.X) + "." + se.Sel.Name
-	} else if _, ok := xExpr.(*ast.IndexExpr); ok {
-		selector = "" // not implement
-	}
-	return selector
-}
-
-func getCallingFunction(expr ast.Expr) (function string) {
-	if s, ok := expr.(*ast.SelectorExpr); ok {
-		var selector = getSelector(s.X)
-		var currentFunc = s.Sel.Name
-		if len(selector) > 0 {
-			currentFunc = selector + "." + currentFunc
-		}
-		function = currentFunc
-	} else if id, ok := expr.(*ast.Ident); ok {
-		function = id.Name
-	}
-	return function
-}
-
-func isTestFile(pass *analysis.Pass, node ast.Node) bool {
-	var file *ast.File
-	for _, f := range pass.Files {
-		if f.Pos() <= node.Pos() && node.Pos() < f.End() {
-			file = f
-			break
-		}
-	}
-	if file == nil {
-		panic("failed to locate the file")
-	}
-	tokenFile := pass.Fset.File(file.Pos())
-	if tokenFile == nil {
-		panic("token file is nil")
-	}
-
-	return strings.HasSuffix(tokenFile.Name(), "_test.go")
 }
 
 func getMethodDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {

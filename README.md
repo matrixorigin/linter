@@ -37,10 +37,15 @@ Import checks run freshly against that graph and the original source. Typed
 checks (`checkrecover`, `checklog`) continue to use Go's vet cache. A module
 mapping change can therefore neither retain a clean result nor retain an obsolete
 finding. There is no nested `go/packages` loader or separate metadata cache.
+Typed-check cache entries are scoped to the selected vet actions; changing the
+selected package set can cause typed analysis to run again.
 
 `GOPACKAGESDRIVER` is intentionally not used: this command uses the same Go
 driver as `go vet`, rather than combining two potentially different build graphs.
 Selected SWIG inputs are rejected; their generated Go source is not supported.
+Overlays that map production and test sources to the same backing file are
+rejected when typed checks are enabled, because its test status is ambiguous.
+Typed-check locations follow Go vet and may name the overlay backing file.
 Tracing flags `-v`, `-x`, and `-work` are rejected because their unstructured
 output is not a diagnostic protocol. `-n`, `-fix`, `-diff`, and flags not listed in `molint check -h` are rejected.
 Build inputs, including overlay backing files, must remain stable during a run,

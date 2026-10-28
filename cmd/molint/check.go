@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,7 +127,10 @@ func goCommand(ctx context.Context, opts options, args ...string) *exec.Cmd {
 	cmd.Dir = opts.dir
 	// Environ supplies PWD for Dir, including a logical symlink used by -C.
 	// The source overlay and Go must resolve relative paths from that same dir.
-	cmd.Env = append(cmd.Environ(), "MOLINT_INTERNAL_VET=1")
+	cmd.Env = cmd.Environ()
+	if opts.childGOFLAGS != nil {
+		cmd.Env = append(cmd.Env, "GOFLAGS="+*opts.childGOFLAGS)
+	}
 	cmd.WaitDelay = 5 * time.Second
 	ownCommand(cmd)
 	return cmd
@@ -179,6 +183,36 @@ func loadGraph(ctx context.Context, opts options) (map[string]*listedPackage, er
 	return graph, nil
 }
 
+// Go vets the internal test variant instead of the base package, and also
+// vets the external test variant. The built-in documentation packages have
+// no vet action. Use Go's listed identities for the action cache boundary.
+func selectedVetActions(graph map[string]*listedPackage, roots map[string]bool) []string {
+	actions := make(map[string]string)
+	for id, pkg := range graph {
+		if roots[id] && !(pkg.Standard && (id == "unsafe" || id == "builtin")) && len(pkg.GoFiles)+len(pkg.CgoFiles) > 0 {
+			actions[id] = id
+		}
+	}
+	for id, pkg := range graph {
+		if !roots[pkg.ForTest] || len(pkg.GoFiles)+len(pkg.CgoFiles) == 0 {
+			continue
+		}
+		pkgPath, _, _ := strings.Cut(id, " [")
+		switch pkgPath {
+		case pkg.ForTest:
+			actions[pkg.ForTest] = id
+		case pkg.ForTest + "_test":
+			actions[id] = id
+		}
+	}
+	selected := make([]string, 0, len(actions))
+	for _, id := range actions {
+		selected = append(selected, id)
+	}
+	sort.Strings(selected)
+	return selected
+}
+
 func runChecks(ctx context.Context, opts options, r *results, stderr io.Writer) error {
 	graph, err := loadGraph(ctx, opts)
 	if err != nil {
@@ -186,16 +220,51 @@ func runChecks(ctx context.Context, opts options, r *results, stderr io.Writer) 
 	}
 	roots := make(map[string]bool)
 	for id, pkg := range graph {
-		if len(pkg.Match) != 0 && pkg.ForTest == "" {
+		// PGO dependency copies inherit Match from their original package but
+		// are listed under a qualified identity, not as selected roots.
+		if len(pkg.Match) != 0 && pkg.ForTest == "" && !strings.Contains(id, " [") {
 			roots[id] = true
 		}
 	}
 	if len(roots) == 0 {
 		return errors.New("no packages selected")
 	}
+	vetActions := selectedVetActions(graph, roots)
 	overlay, err := opts.readOverlay()
 	if err != nil {
 		return err
+	}
+	// go vet sees overlay backing paths, whereas test status belongs to the
+	// logical source. Reject ambiguous physical identities rather than guess.
+	var sourceTests map[string]bool
+	if len(overlay) != 0 && (opts.analyzers["checklog"] || opts.analyzers["checkrecover"]) {
+		sourceTests = make(map[string]bool)
+		for _, id := range vetActions {
+			pkg := graph[id]
+			for _, name := range pkg.GoFiles {
+				logical := name
+				if !filepath.IsAbs(logical) {
+					logical = filepath.Join(pkg.Dir, logical)
+				}
+				logical = filepath.Clean(logical)
+				physical := logical
+				if mapped, ok := overlay[logical]; ok && mapped != "" {
+					physical = mapped
+				}
+				test := strings.HasSuffix(logical, "_test.go")
+				if previous, ok := sourceTests[physical]; ok && previous != test {
+					return fmt.Errorf("overlay backing file %s has ambiguous test status", physical)
+				}
+				sourceTests[physical] = test
+			}
+		}
+		// Most paths already have the right suffix. Pass only exceptions to
+		// vet processes, avoiding a map proportional to the whole package set.
+		for physical, test := range sourceTests {
+			if strings.HasSuffix(physical, "_test.go") == test {
+				delete(sourceTests, physical)
+			}
+		}
 	}
 	fset := token.NewFileSet()
 	parsed := make(map[string]*ast.File)
@@ -204,11 +273,14 @@ func runChecks(ctx context.Context, opts options, r *results, stderr io.Writer) 
 		// ForTest also marks dependencies recompiled for a test. Only check
 		// the selected root itself and its external test package.
 		selectedTest := roots[pkg.ForTest] && (pkgPath == pkg.ForTest || pkgPath == pkg.ForTest+"_test")
-		if (!roots[id] && !selectedTest) || (!opts.analyzers["checkunsafe"] && !opts.analyzers["pkgblocklist"]) {
+		if !roots[id] && !selectedTest {
 			continue
 		}
 		if len(pkg.SwigFiles)+len(pkg.SwigCXXFiles) != 0 {
 			return fmt.Errorf("%s: SWIG-generated source is not supported by molint check", id)
+		}
+		if !opts.analyzers["checkunsafe"] && !opts.analyzers["pkgblocklist"] {
+			continue
 		}
 		for _, group := range []struct {
 			files []string
@@ -288,34 +360,93 @@ func runChecks(ctx context.Context, opts options, r *results, stderr io.Writer) 
 	if err != nil {
 		return err
 	}
-	args := append([]string{"vet", "-json", "-vettool=" + tool}, opts.buildFlags...)
+	tempRoot, err := filepath.Abs(os.TempDir())
+	if err != nil {
+		return err
+	}
+	legacyDir, err := os.MkdirTemp(tempRoot, "molint-vet-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(legacyDir)
+	scopeInputs := append([]string{"v2"}, vetActions...)
+	if len(overlay) != 0 {
+		identity, err := json.Marshal(overlay)
+		if err != nil {
+			return err
+		}
+		scopeInputs = append(scopeInputs, string(identity))
+	}
+	if roots["command-line-arguments"] {
+		// The synthetic import path alone does not identify named-file inputs.
+		scopeInputs = append(scopeInputs, opts.dir)
+		scopeInputs = append(scopeInputs, opts.packages...)
+	}
+	scope := sha256.Sum256([]byte(strings.Join(scopeInputs, "\x00")))
+	args := append([]string{"vet", "-json", "-vettool=" + tool, fmt.Sprintf("-molintscope=%x", scope)}, opts.buildFlags...)
 	for _, name := range []string{"checkrecover", "checklog"} {
 		args = append(args, "-"+name+"="+strconv.FormatBool(opts.analyzers[name]))
 	}
 	cmd := goCommand(ctx, opts, append(args, opts.packages...)...)
+	cmd.Env = append(cmd.Env, "MOLINT_INTERNAL_VET="+legacyDir)
+	if sourceTests != nil {
+		data, err := json.Marshal(sourceTests)
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(legacyDir, "sources.json")
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			return err
+		}
+		cmd.Env = append(cmd.Env, "MOLINT_INTERNAL_SOURCES="+path)
+	}
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("go vet: %w\n%s%s", err, &out, &errOut)
 	}
-	// Go 1.24 writes JSON to stderr with package headers; Go 1.26+ writes
-	// its cached JSON to stdout. Consume both, never rely on JSON-mode status.
-	seen := false
-	for _, stream := range [][]byte{out.Bytes(), errOut.Bytes()} {
-		found, err := r.readVetOutput(stream, stderr)
+	// Build warnings belong to stderr, which is not a JSON protocol. Go
+	// 1.26+ returns cached analyzer JSON on stdout; older Go writes each
+	// selected action's JSON into its private file above.
+	if _, err := stderr.Write(errOut.Bytes()); err != nil {
+		return err
+	}
+	count, err := r.readVetOutput(out.Bytes(), stderr)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(legacyDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == "sources.json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(legacyDir, entry.Name()))
 		if err != nil {
 			return err
 		}
-		seen = seen || found
+		if !bytes.HasSuffix(data, []byte("\n")) || !json.Valid(data) {
+			return fmt.Errorf("invalid legacy vet output %s", entry.Name())
+		}
+		found, err := r.readVetOutput(data, stderr)
+		if err != nil {
+			return err
+		}
+		if found != 1 {
+			return fmt.Errorf("empty legacy vet output %s", entry.Name())
+		}
+		count += found
 	}
-	if !seen {
-		return errors.New("go vet returned no JSON results")
+	if count != len(vetActions) {
+		return fmt.Errorf("go vet returned %d JSON results for %d selected actions", count, len(vetActions))
 	}
 	return ctx.Err()
 }
 
-func (r *results) readVetOutput(data []byte, stderr io.Writer) (bool, error) {
-	seen := false
+func (r *results) readVetOutput(data []byte, stderr io.Writer) (int, error) {
+	count := 0
 	for len(bytes.TrimSpace(data)) != 0 {
 		data = bytes.TrimSpace(data)
 		if bytes.HasPrefix(data, []byte("# ")) || bytes.HasPrefix(data, []byte("go: ")) {
@@ -329,27 +460,27 @@ func (r *results) readVetOutput(data []byte, stderr io.Writer) (bool, error) {
 		var pkgs map[string]map[string]json.RawMessage
 		d := json.NewDecoder(bytes.NewReader(data))
 		if err := d.Decode(&pkgs); err != nil || pkgs == nil {
-			return seen, fmt.Errorf("invalid go vet JSON: %v", err)
+			return count, fmt.Errorf("invalid go vet JSON: %v", err)
 		}
-		seen = true
+		count++
 		data = data[d.InputOffset():]
 		for pkg, analyzers := range pkgs {
 			if pkg == "" || analyzers == nil {
-				return seen, errors.New("invalid package in go vet JSON")
+				return count, errors.New("invalid package in go vet JSON")
 			}
 			for name, raw := range analyzers {
 				var ds []diagnostic
 				if err := json.Unmarshal(raw, &ds); err != nil || ds == nil {
-					return seen, fmt.Errorf("go vet %s/%s: %s", pkg, name, raw)
+					return count, fmt.Errorf("go vet %s/%s: %s", pkg, name, raw)
 				}
 				for _, diag := range ds {
 					if diag.Message == "" {
-						return seen, fmt.Errorf("go vet %s/%s: missing diagnostic message", pkg, name)
+						return count, fmt.Errorf("go vet %s/%s: missing diagnostic message", pkg, name)
 					}
 					r.add(pkg, name, diag)
 				}
 			}
 		}
 	}
-	return seen, nil
+	return count, nil
 }
