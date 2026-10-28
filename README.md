@@ -41,7 +41,8 @@ finding. There is no nested `go/packages` loader or separate metadata cache.
 `GOPACKAGESDRIVER` is intentionally not used: this command uses the same Go
 driver as `go vet`, rather than combining two potentially different build graphs.
 Selected SWIG inputs are rejected; their generated Go source is not supported.
-`-n`, `-fix`, `-diff`, and flags not listed in `molint check -h` are rejected.
+Tracing flags `-v`, `-x`, and `-work` are rejected because their unstructured
+output is not a diagnostic protocol. `-n`, `-fix`, `-diff`, and flags not listed in `molint check -h` are rejected.
 Build inputs, including overlay backing files, must remain stable during a run,
 as with an ordinary Go build; the command does not create an atomic snapshot.
 

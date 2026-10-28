@@ -71,12 +71,11 @@ func (r *results) add(pkg, analyzer string, d diagnostic) {
 
 func check(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opts, err := parseOptions(ctx, args, stderr)
-	if err != nil {
-		fmt.Fprintln(stderr, "molint:", err)
-		return 2
-	}
 	r := results{Diagnostics: make(map[string]map[string][]diagnostic)}
-	if err := runChecks(ctx, opts, &r, stderr); err != nil {
+	if err == nil {
+		err = runChecks(ctx, opts, &r, stderr)
+	}
+	if err != nil {
 		r.Error = err.Error()
 	}
 	if opts.json {
@@ -125,8 +124,9 @@ type listedPackage struct {
 func goCommand(ctx context.Context, opts options, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = opts.dir
-	// Effective GOFLAGS have already been parsed and combined with CLI flags.
-	cmd.Env = append(os.Environ(), "GOFLAGS=", "MOLINT_INTERNAL_VET=1")
+	// Environ supplies PWD for Dir, including a logical symlink used by -C.
+	// The source overlay and Go must resolve relative paths from that same dir.
+	cmd.Env = append(cmd.Environ(), "MOLINT_INTERNAL_VET=1")
 	cmd.WaitDelay = 5 * time.Second
 	ownCommand(cmd)
 	return cmd
@@ -200,13 +200,16 @@ func runChecks(ctx context.Context, opts options, r *results, stderr io.Writer) 
 	fset := token.NewFileSet()
 	parsed := make(map[string]*ast.File)
 	for id, pkg := range graph {
-		if (!roots[id] && !roots[pkg.ForTest]) || (!opts.analyzers["checkunsafe"] && !opts.analyzers["pkgblocklist"]) {
+		pkgPath, _, _ := strings.Cut(id, " [")
+		// ForTest also marks dependencies recompiled for a test. Only check
+		// the selected root itself and its external test package.
+		selectedTest := roots[pkg.ForTest] && (pkgPath == pkg.ForTest || pkgPath == pkg.ForTest+"_test")
+		if (!roots[id] && !selectedTest) || (!opts.analyzers["checkunsafe"] && !opts.analyzers["pkgblocklist"]) {
 			continue
 		}
 		if len(pkg.SwigFiles)+len(pkg.SwigCXXFiles) != 0 {
 			return fmt.Errorf("%s: SWIG-generated source is not supported by molint check", id)
 		}
-		pkgPath, _, _ := strings.Cut(id, " [")
 		for _, group := range []struct {
 			files []string
 			cgo   bool

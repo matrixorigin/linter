@@ -36,15 +36,22 @@ type options struct {
 }
 
 // Build flags are forwarded, not interpreted. Go remains responsible for their
-// validation and effect. Keep a single value for GOFLAGS/CLI override semantics.
+// validation and effect. Preserve ordered CLI occurrences and leave GOFLAGS
+// in the environment: Go distinguishes those inputs (for example in GOPATH).
 type buildFlag struct {
 	value   string
+	name    string
+	flags   *[]string
 	boolean bool
 }
 
-func (f *buildFlag) String() string     { return f.value }
-func (f *buildFlag) Set(s string) error { f.value = s; return nil }
-func (f *buildFlag) IsBoolFlag() bool   { return f.boolean }
+func (f *buildFlag) String() string { return f.value }
+func (f *buildFlag) Set(s string) error {
+	f.value = s
+	*f.flags = append(*f.flags, "-"+f.name+"="+s)
+	return nil
+}
+func (f *buildFlag) IsBoolFlag() bool { return f.boolean }
 
 func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options, error) {
 	opts := options{analyzers: make(map[string]bool)}
@@ -69,7 +76,6 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		}
 	}
 	cmd := goCommand(ctx, opts, "env", "-json", "GOFLAGS", "GOMOD")
-	cmd.Env = os.Environ()
 	envJSON, err := cmd.Output()
 	if err != nil {
 		var exit *exec.ExitError
@@ -95,13 +101,14 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		selected[name] = fs.Bool(name, true, "enable "+name)
 	}
 	build := make(map[string]*buildFlag)
-	for _, name := range strings.Fields("a race msan asan v work x trimpath modcacherw cover buildvcs") {
+	for _, name := range strings.Fields("a race msan asan trimpath modcacherw cover buildvcs") {
 		build[name] = &buildFlag{boolean: true}
 	}
 	for _, name := range strings.Fields("p tags mod modfile overlay compiler buildmode asmflags gcflags ldflags gccgoflags pkgdir toolexec installsuffix covermode coverpkg pgo") {
 		build[name] = &buildFlag{}
 	}
 	for name, value := range build {
+		value.name, value.flags = name, &opts.buildFlags
 		fs.Var(value, name, "Go build flag")
 	}
 	if err := fs.Parse(envFlags); err != nil {
@@ -110,6 +117,8 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 	if len(fs.Args()) != 0 {
 		return opts, errors.New("GOFLAGS must contain flags, not package arguments")
 	}
+	// Environment flags are still supplied by Go itself, not replayed as CLI.
+	opts.buildFlags = nil
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
@@ -117,9 +126,6 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 	fs.Visit(func(f *flag.Flag) {
 		if value, ok := selected[f.Name]; ok && *value {
 			anyEnabled = true
-		}
-		if value, ok := build[f.Name]; ok {
-			opts.buildFlags = append(opts.buildFlags, "-"+f.Name+"="+value.value)
 		}
 	})
 	for name, value := range selected {

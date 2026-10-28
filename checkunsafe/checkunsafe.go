@@ -178,10 +178,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/vm/process/dependent_scope.go",
 
 	// Existing CGo/allocator, zero-copy, alignment, and stable-hash boundaries.
-	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/keycodec/keycodec.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_reclaim.go",
 	"github.com/matrixorigin/matrixone/pkg/container/arrowbridge/convert.go",
 	"github.com/matrixorigin/matrixone/pkg/container/hashtable/stable_hash.go",
@@ -209,6 +206,14 @@ var importOK = func() func(path string) bool {
 // file-level authorizations for cgo sources under their former cooked names.
 func Message(pkgPath, fileName string, cgo bool) string {
 	if cgo {
+		// New source approvals require this exact authored CGo file. They
+		// do not authorize an ordinary file named like a generated one.
+		switch path.Join(pkgPath, fileName) {
+		case "github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.go",
+			"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.go",
+			"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.go":
+			return ""
+		}
 		fileName = strings.TrimSuffix(fileName, ".go") + ".cgo1.go"
 	}
 	key := path.Join(pkgPath, fileName)

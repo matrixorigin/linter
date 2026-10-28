@@ -16,7 +16,9 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -31,6 +33,13 @@ func testSourceSelection(t *testing.T, tool string) {
 		}
 		t.Run(name+" overlay", func(t *testing.T) {
 			dir := t.TempDir()
+			entries := []string{dir}
+			link := filepath.Join(t.TempDir(), "linked")
+			if err := os.Symlink(dir, link); err == nil {
+				entries = append(entries, link)
+			} else if runtime.GOOS != "windows" {
+				t.Fatal(err)
+			}
 			overlay, err := json.Marshal(map[string]any{"Replace": map[string]string{"fixture.go": ".overlay/source.go"}})
 			if err != nil {
 				t.Fatal(err)
@@ -48,13 +57,15 @@ func testSourceSelection(t *testing.T, tool string) {
 				writeFixture(t, dir, map[string]string{"fixture.go": disk, ".overlay/source.go": replacement})
 				// A CLI overlay must override GOFLAGS for BOTH phases.
 				t.Setenv("GOFLAGS", "-p=2 -overlay=empty.json")
-				code, out := runTool(t, dir, tool, "check", "-overlay=overlay.json", "./...")
 				want := 0
 				if overlayUnsafe {
 					want = 1
 				}
-				if code != want || (want == 1 && strings.Count(out, "importing the unsafe package") != 1) {
-					t.Fatalf("overlay unsafe=%v: %d %s", overlayUnsafe, code, out)
+				for _, entry := range entries {
+					code, out := runTool(t, filepath.Dir(dir), tool, "check", "-C", entry, "-overlay=overlay.json", "./...")
+					if code != want || (want == 1 && strings.Count(out, "importing the unsafe package") != 1) {
+						t.Fatalf("overlay unsafe=%v entry=%s: %d %s", overlayUnsafe, entry, code, out)
+					}
 				}
 			}
 			// GOFLAGS-only overlay, relative to -C, is the same input source.
@@ -75,6 +86,22 @@ func testSourceSelection(t *testing.T, tool string) {
 		code, out := runTool(t, dir, tool, "check", "./...")
 		if code != 1 || !strings.Contains(out, "internal_test.go") || !strings.Contains(out, "external_test.go") {
 			t.Fatalf("test variants: %d %s", code, out)
+		}
+	})
+	t.Run("test dependency back edge", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":           "module example.org/back-edge\ngo 1.24\n",
+			"fixture.go":       "package fixture\n",
+			"internal_test.go": "package fixture\nconst testOnly = 1\n",
+			"external_test.go": "package fixture_test\nimport _ \"example.org/back-edge/helper\"\n",
+			"helper/helper.go": "package helper\nimport _ \"example.org/back-edge\"\nimport _ \"unsafe\"\n",
+		})
+		if code, out := runTool(t, dir, tool, "check", "."); code != 0 {
+			t.Fatalf("recompiled dependency was selected: %d %s", code, out)
+		}
+		if code, out := runTool(t, dir, tool, "check", "./..."); code != 1 || !strings.Contains(out, "helper.go") {
+			t.Fatalf("explicit helper selection: %d %s", code, out)
 		}
 	})
 	t.Run("dependency-only and build tags", func(t *testing.T) {
