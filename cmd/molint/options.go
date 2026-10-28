@@ -76,18 +76,20 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		}
 	}
 	cmd := goCommand(ctx, opts, "env", "-json", "GOFLAGS", "GOMOD")
-	envJSON, err := cmd.Output()
-	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return opts, fmt.Errorf("go env: %w\n%s", err, exit.Stderr)
-		}
-		return opts, fmt.Errorf("go env: %w", err)
-	}
+	envJSON, envErr := cmd.Output()
 	var goEnv struct{ GOFLAGS, GOMOD string }
-	if err := json.Unmarshal(envJSON, &goEnv); err != nil {
-		return opts, fmt.Errorf("go env: %w", err)
+	if envErr != nil {
+		var exit *exec.ExitError
+		if errors.As(envErr, &exit) {
+			envErr = fmt.Errorf("go env: %w\n%s", envErr, exit.Stderr)
+		} else {
+			envErr = fmt.Errorf("go env: %w", envErr)
+		}
+	} else if err := json.Unmarshal(envJSON, &goEnv); err != nil {
+		envErr = fmt.Errorf("go env: %w", err)
 	}
+	// Still parse the requested output mode if the external preflight failed.
+	// The failure is returned after option parsing, before any checks can run.
 	opts.moduleMode = goEnv.GOMOD != ""
 	envFlags, err := splitGOFLAGS(goEnv.GOFLAGS)
 	if err != nil {
@@ -146,7 +148,7 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 			return opts, errors.New("flags must precede package arguments")
 		}
 	}
-	return opts, nil
+	return opts, envErr
 }
 
 // GOFLAGS uses Go's quoted-word convention, not shell expansion: only a quote

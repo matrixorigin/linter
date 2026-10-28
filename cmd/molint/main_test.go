@@ -287,6 +287,14 @@ func TestCheck(t *testing.T) {
 				t.Fatalf("flag %s: %v %s", flag, err, out)
 			}
 		}
+		t.Setenv("PATH", t.TempDir())
+		cmd := exec.Command(tool, "check", "-json", ".")
+		cmd.Dir = dir
+		out, err := cmd.Output()
+		var r results
+		if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 2 || json.Unmarshal(out, &r) != nil || !strings.Contains(r.Error, "go env:") {
+			t.Fatalf("missing Go must return JSON execution error: %v %s", err, out)
+		}
 	})
 	t.Run("unsupported source generation", func(t *testing.T) {
 		dir := t.TempDir()
