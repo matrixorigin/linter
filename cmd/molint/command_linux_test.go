@@ -16,7 +16,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -87,5 +89,22 @@ func TestGoCommandCancellation(t *testing.T) {
 		case <-deadline.C:
 			t.Fatalf("compiler child survived cancellation: %s", stat)
 		}
+	}
+}
+
+func TestInvalidGoEnvironmentReturnsJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, map[string]string{
+		"go": "#!/bin/sh\nprintf '%s\\n' '{\"GOFLAGS\":\"-x\",\"GOMOD\":1}'\n",
+	})
+	if err := os.Chmod(filepath.Join(dir, "go"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	var out, errOut bytes.Buffer
+	code := check(context.Background(), []string{"-json", "."}, &out, &errOut)
+	var r results
+	if code != 2 || json.Unmarshal(out.Bytes(), &r) != nil || !strings.Contains(r.Error, "cannot unmarshal number") {
+		t.Fatalf("partial environment must not override the preflight error: status=%d out=%s err=%s", code, &out, &errOut)
 	}
 }

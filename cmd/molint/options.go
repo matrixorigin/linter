@@ -55,11 +55,6 @@ func (f *buildFlag) IsBoolFlag() bool { return f.boolean }
 
 func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options, error) {
 	opts := options{analyzers: make(map[string]bool)}
-	var err error
-	opts.dir, err = os.Getwd()
-	if err != nil {
-		return opts, err
-	}
 	// Like Go, -C is an entry option, before all other flags and packages.
 	if len(args) > 0 && (args[0] == "-C" || strings.HasPrefix(args[0], "-C=")) {
 		value := strings.TrimPrefix(args[0], "-C=")
@@ -69,31 +64,7 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 			}
 			value, args = args[1], args[1:]
 		}
-		args = args[1:]
-		opts.dir, err = filepath.Abs(value)
-		if err != nil {
-			return opts, err
-		}
-	}
-	cmd := goCommand(ctx, opts, "env", "-json", "GOFLAGS", "GOMOD")
-	envJSON, envErr := cmd.Output()
-	var goEnv struct{ GOFLAGS, GOMOD string }
-	if envErr != nil {
-		var exit *exec.ExitError
-		if errors.As(envErr, &exit) {
-			envErr = fmt.Errorf("go env: %w\n%s", envErr, exit.Stderr)
-		} else {
-			envErr = fmt.Errorf("go env: %w", envErr)
-		}
-	} else if err := json.Unmarshal(envJSON, &goEnv); err != nil {
-		envErr = fmt.Errorf("go env: %w", err)
-	}
-	// Still parse the requested output mode if the external preflight failed.
-	// The failure is returned after option parsing, before any checks can run.
-	opts.moduleMode = goEnv.GOMOD != ""
-	envFlags, err := splitGOFLAGS(goEnv.GOFLAGS)
-	if err != nil {
-		return opts, err
+		opts.dir, args = value, args[1:]
 	}
 	fs := flag.NewFlagSet("molint check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -113,16 +84,62 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		value.name, value.flags = name, &opts.buildFlags
 		fs.Var(value, name, "Go build flag")
 	}
-	if err := fs.Parse(envFlags); err != nil {
+	// Establish the caller's output mode before filesystem or Go preflight.
+	if err := fs.Parse(args); err != nil {
+		return opts, err
+	}
+	opts.packages = fs.Args()
+	if len(opts.packages) == 0 {
+		opts.packages = []string{"."}
+	}
+	for _, pkg := range opts.packages {
+		if strings.HasPrefix(pkg, "-") {
+			return opts, errors.New("flags must precede package arguments")
+		}
+	}
+	var err error
+	if opts.dir == "" {
+		opts.dir, err = os.Getwd()
+	} else {
+		opts.dir, err = filepath.Abs(opts.dir)
+	}
+	if err != nil {
+		return opts, err
+	}
+	cmd := goCommand(ctx, opts, "env", "-json", "GOFLAGS", "GOMOD")
+	envJSON, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return opts, fmt.Errorf("go env: %w\n%s", err, exit.Stderr)
+		}
+		return opts, fmt.Errorf("go env: %w", err)
+	}
+	var goEnv struct{ GOFLAGS, GOMOD string }
+	if err := json.Unmarshal(envJSON, &goEnv); err != nil {
+		return opts, fmt.Errorf("go env: %w", err)
+	}
+	opts.moduleMode = goEnv.GOMOD != ""
+	envFlags, err := splitGOFLAGS(goEnv.GOFLAGS)
+	if err != nil {
+		return opts, err
+	}
+	// Parse each input once. Environment values are defaults: restore explicit
+	// CLI values afterward, and forward the original ordered CLI build flags.
+	cliValues := make(map[string]string)
+	fs.Visit(func(f *flag.Flag) { cliValues[f.Name] = f.Value.String() })
+	cliBuildFlags := opts.buildFlags
+	opts.buildFlags = nil
+	err = fs.Parse(envFlags)
+	for name, value := range cliValues {
+		_ = fs.Set(name, value) // This value already passed the same parser.
+	}
+	opts.buildFlags = cliBuildFlags
+	if err != nil {
 		return opts, err
 	}
 	if len(fs.Args()) != 0 {
 		return opts, errors.New("GOFLAGS must contain flags, not package arguments")
-	}
-	// Environment flags are still supplied by Go itself, not replayed as CLI.
-	opts.buildFlags = nil
-	if err := fs.Parse(args); err != nil {
-		return opts, err
 	}
 	anyEnabled := false
 	fs.Visit(func(f *flag.Flag) {
@@ -139,16 +156,7 @@ func parseOptions(ctx context.Context, args []string, stderr io.Writer) (options
 		}
 	})
 	opts.overlay = build["overlay"].value
-	opts.packages = fs.Args()
-	if len(opts.packages) == 0 {
-		opts.packages = []string{"."}
-	}
-	for _, pkg := range opts.packages {
-		if strings.HasPrefix(pkg, "-") {
-			return opts, errors.New("flags must precede package arguments")
-		}
-	}
-	return opts, envErr
+	return opts, nil
 }
 
 // GOFLAGS uses Go's quoted-word convention, not shell expansion: only a quote
