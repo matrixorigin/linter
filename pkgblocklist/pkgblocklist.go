@@ -14,98 +14,16 @@
 
 package pkgblocklist
 
-import (
-	"fmt"
-	"sync"
-
-	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/packages"
-)
-
-const doc = "Block unwanted packages"
-
-var blockList = []BlockSpec{
-	{
-		MatchModule: "go.etcd.io/etcd",
-		UseInstead:  "go.etcd.io/etcd/v3",
-	},
-	{
-		MatchPath:  "io/ioutil",
-		UseInstead: "os",
-	},
-}
-
-type BlockSpec struct {
-	MatchModule string
-	MatchPath   string
-	UseInstead  string
-}
-
-var Analyzer = &analysis.Analyzer{
-	Name: "pkgblocklist",
-	Doc:  doc,
-	Run:  run,
-}
-
-var packagesPackages sync.Map // import path -> *packages.Package
-
-func getPackagesPackage(importPath string) (*packages.Package, error) {
-	v, ok := packagesPackages.Load(importPath)
-	if ok {
-		return v.(*packages.Package), nil
+// Message checks the identity reported by the Go package graph. Module
+// ownership is deliberately checked by the command, outside go vet's cache.
+// A replacement changes the code location, not the logical module identity.
+func Message(importPath, modulePath string) string {
+	switch {
+	case importPath == "io/ioutil":
+		return "do not use package io/ioutil, use os instead"
+	case modulePath == "go.etcd.io/etcd":
+		return "do not use packages in module go.etcd.io/etcd, use go.etcd.io/etcd/v3 instead"
+	default:
+		return ""
 	}
-	cfg := &packages.Config{
-		Mode: packages.NeedModule,
-	}
-	pkgs, err := packages.Load(cfg, importPath)
-	if err != nil {
-		return nil, fmt.Errorf("load metadata for %s: %w", importPath, err)
-	}
-	if len(pkgs) == 0 || pkgs[0] == nil {
-		return nil, fmt.Errorf("load metadata for %s: no package returned", importPath)
-	}
-	pkg := pkgs[0]
-	if len(pkg.Errors) != 0 {
-		return nil, fmt.Errorf("load metadata for %s: %w", importPath, pkg.Errors[0])
-	}
-	packagesPackages.Store(importPath, pkg)
-	return pkg, nil
-}
-
-func run(pass *analysis.Pass) (any, error) {
-
-	for _, dep := range pass.Pkg.Imports() {
-
-		path := dep.Path()
-		packagesPkg, err := getPackagesPackage(path)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, spec := range blockList {
-			// match import path
-			if path == spec.MatchPath {
-				message := fmt.Sprintf("do not use package %s", spec.MatchPath)
-				if spec.UseInstead != "" {
-					message += fmt.Sprintf(", use %s instead", spec.UseInstead)
-				}
-				pass.Reportf(0, "%s", message)
-			}
-
-			// match module path
-			if packagesPkg.Module != nil {
-				modulePath := packagesPkg.Module.Path
-				if modulePath == spec.MatchModule {
-					message := fmt.Sprintf("do not use packages in module %s", spec.MatchModule)
-					if spec.UseInstead != "" {
-						message += fmt.Sprintf(", use %s instead", spec.UseInstead)
-					}
-					pass.Reportf(0, "%s", message)
-				}
-			}
-
-		}
-	}
-
-	return nil, nil
 }

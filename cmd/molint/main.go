@@ -15,13 +15,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/matrixorigin/linter/checklog"
 	"github.com/matrixorigin/linter/checkrecover"
-	"github.com/matrixorigin/linter/checkunsafe"
-	"github.com/matrixorigin/linter/pkgblocklist"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
@@ -29,24 +30,48 @@ import (
 // An analyzer error in unitchecker's JSON mode exits successfully. Go vet can
 // cache the facts before processing that error, making a retry falsely pass.
 // Fail the vettool process at the command boundary so failed runs are retried.
-func failOnError(a *analysis.Analyzer) *analysis.Analyzer {
-	wrapped := *a
-	wrapped.Run = func(pass *analysis.Pass) (any, error) {
-		result, err := a.Run(pass)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "molint: %s: %v\n", a.Name, err)
-			os.Exit(1)
+func failOnError(analyzers ...*analysis.Analyzer) {
+	seen := make(map[*analysis.Analyzer]bool)
+	var wrap func(*analysis.Analyzer)
+	wrap = func(a *analysis.Analyzer) {
+		if seen[a] {
+			return
 		}
-		return result, nil
+		seen[a] = true
+		for _, required := range a.Requires {
+			wrap(required)
+		}
+		run := a.Run
+		a.Run = func(pass *analysis.Pass) (any, error) {
+			result, err := run(pass)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "molint: %s: %v\n", a.Name, err)
+				os.Exit(1)
+			}
+			return result, nil
+		}
 	}
-	return &wrapped
+	for _, a := range analyzers {
+		wrap(a)
+	}
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		code := check(ctx, os.Args[2:], os.Stdout, os.Stderr)
+		stop()
+		os.Exit(code)
+	}
+	// Go asks for the tool identity before consulting its vet cache. Reject
+	// the old entry there as well as at execution: it cannot run import checks.
+	if os.Getenv("MOLINT_INTERNAL_VET") != "1" && !(len(os.Args) == 2 && os.Args[1] == "-flags") {
+		fmt.Fprintln(os.Stderr, "molint: use 'molint check [build flags] [packages]' instead of go vet -vettool=molint")
+		os.Exit(2)
+	}
+	failOnError(checkrecover.Analyzer, checklog.Analyzer)
 	unitchecker.Main(
-		failOnError(checkrecover.Analyzer),
-		failOnError(pkgblocklist.Analyzer),
-		failOnError(checklog.Analyzer),
-		failOnError(checkunsafe.Analyzer),
+		checkrecover.Analyzer,
+		checklog.Analyzer,
 	)
 }

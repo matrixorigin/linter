@@ -27,9 +27,43 @@ import (
 	"time"
 )
 
-// Exercise the actual go vet protocol: unit tests of analyzer diagnostics alone
-// cannot detect a mismatch between Go's vet driver and unitchecker output.
-func TestVetToolReportsFindings(t *testing.T) {
+func writeFixture(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		name = filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func runTool(t *testing.T, dir, executable string, args ...string) (int, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Dir = dir
+	cmd.WaitDelay = 5 * time.Second
+	ownCommand(cmd)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("command timed out: %v\n%s", ctx.Err(), out)
+	}
+	if err != nil {
+		if e, ok := err.(*exec.ExitError); ok {
+			return e.ExitCode(), string(out)
+		}
+		t.Fatalf("start command: %v\n%s", err, out)
+	}
+	return 0, string(out)
+}
+
+// Build once and exercise the public command. Analyzer-only tests cannot prove
+// the Go driver protocol, source selection, or module-cache transitions.
+func TestCheck(t *testing.T) {
 	goCommand := filepath.Join(runtime.GOROOT(), "bin", "go")
 	if runtime.GOOS == "windows" {
 		goCommand += ".exe"
@@ -37,25 +71,21 @@ func TestVetToolReportsFindings(t *testing.T) {
 	t.Setenv("PATH", filepath.Join(runtime.GOROOT(), "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
-	t.Setenv("GOPACKAGESDRIVER", "off")
-
+	t.Setenv("GOFLAGS", "-p=2")
+	t.Setenv("CGO_CFLAGS", "")
+	t.Setenv("CGO_LDFLAGS", "")
+	t.Setenv("MOLINT_INTERNAL_VET", "")
 	tool := filepath.Join(t.TempDir(), "molint")
 	if runtime.GOOS == "windows" {
 		tool += ".exe"
 	}
-	buildCtx, cancelBuild := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancelBuild()
-	build := exec.CommandContext(buildCtx, goCommand, "build", "-o", tool, ".")
-	build.WaitDelay = 5 * time.Second
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build molint: %v\n%s", err, out)
+	if code, out := runTool(t, ".", goCommand, "build", "-o", tool, "."); code != 0 {
+		t.Fatalf("build: %s", out)
 	}
-
 	tests := []struct {
-		name, source, want   string
-		module, file, driver string
-		wantCount            int
-		transient            bool
+		name, source, want string
+		module, file       string
+		wantCount          int
 	}{
 		{name: "clean", source: "package fixture\n"},
 		{name: "blocked import", source: "package fixture\nimport _ \"io/ioutil\"\n", want: "do not use package io/ioutil"},
@@ -86,115 +116,141 @@ func TestVetToolReportsFindings(t *testing.T) {
 		{name: "alias named like approved receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype unrelated struct{}\ntype remoteBackend = unrelated\nfunc (*remoteBackend) writeLoop() { recover() }\n", want: "unsafe recover() found"},
 		{name: "recover in test file", file: "fixture_test.go", source: "package fixture\nfunc f() { recover() }\n"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
-		{name: "loader failure", source: "package fixture\nimport _ \"fmt\"\n", want: "injected loader failure", driver: "#!/bin/sh\necho injected loader failure >&2\nexit 1\n"},
-		{name: "empty loader response", source: "package fixture\nimport _ \"fmt\"\n", want: "no package returned", driver: "#!/bin/sh\nprintf '%s\\n' '{\"Roots\":[],\"Packages\":[]}'\n"},
-		{name: "package metadata error", source: "package fixture\nimport _ \"fmt\"\n", want: "injected package metadata failure", driver: "#!/bin/sh\nprintf '%s\\n' '{\"Roots\":[\"fmt\"],\"Packages\":[{\"ID\":\"fmt\",\"PkgPath\":\"fmt\",\"Errors\":[{\"Msg\":\"injected package metadata failure\",\"Kind\":1}]}]}'\n"},
-		{name: "transient loader recovery", source: "package fixture\nimport _ \"fmt\"\n// transient loader\n", want: "injected transient loader failure", transient: true, driver: "#!/bin/sh\nprintf x >> driver-calls\nif [ ! -e driver-failed ]; then : > driver-failed; echo injected transient loader failure >&2; exit 1; fi\nprintf '%s\\n' '{\"Roots\":[\"fmt\"],\"Packages\":[{\"ID\":\"fmt\",\"PkgPath\":\"fmt\"}]}'\n"},
+		{name: "clean cgo", source: "package fixture\nimport \"C\"\n"},
+		{name: "authored unsafe in cgo", source: "package fixture\nimport \"C\"\nimport _ `unsafe`\n", want: "importing the unsafe package", wantCount: 1},
+		{name: "allowed cgo import", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.go", source: "package fixture\nimport \"C\"\nimport _ \"unsafe\"\n"},
+		{name: "generated source still checked", source: "// Code generated by fixture. DO NOT EDIT.\npackage fixture\nimport _ \"unsafe\"\n", want: "importing the unsafe package"},
+		{name: "line directive cannot grant exemption", module: "github.com/matrixorigin/matrixone/pkg/common/util", source: "package fixture\n//line unsafe.go:3\nimport _ \"unsafe\"\n", want: "importing the unsafe package"},
+		{name: "approved parser control boundary", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nfunc ParseWithSQLMode() { defer func(){ if p:=recover(); p!=nil {panic(p)} }() }\n"},
+		{name: "adjacent parser recover rejected", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nfunc ParseOther() { recover() }\n", want: "unsafe recover() found"},
+		{name: "approved layout file", module: "github.com/matrixorigin/matrixone/pkg/vm", file: "continuation.go", source: "package fixture\nimport \"unsafe\"\nconst size=unsafe.Sizeof(1)\n"},
+		{name: "adjacent layout file rejected", module: "github.com/matrixorigin/matrixone/pkg/vm", file: "unapproved.go", source: "package fixture\nimport \"unsafe\"\nconst size=unsafe.Sizeof(1)\n", want: "importing the unsafe package"},
+		{name: "approved regexp debug", module: "github.com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2", source: "package fixture\nimport \"fmt\"\ntype runner struct{}\nfunc (*runner) scan(){fmt.Printf(\"debug\")}\n"},
+		{name: "adjacent regexp method rejected", module: "github.com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2", source: "package fixture\nimport \"fmt\"\ntype runner struct{}\nfunc (*runner) other(){fmt.Printf(\"debug\")}\n", want: "uncatch log function"},
+		{name: "regexp lookalike rejected", module: "github.com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2_other", source: "package fixture\nimport \"fmt\"\ntype runner struct{}\nfunc (*runner) scan(){fmt.Printf(\"debug\")}\n", want: "uncatch log function"},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.driver != "" && runtime.GOOS == "windows" {
-				t.Skip("fixture driver is a shell script")
-			}
 			dir := t.TempDir()
-			module := tc.module
+			module, file := tc.module, tc.file
 			if module == "" {
 				module = "example.org/molint-fixture"
 			}
-			file := tc.file
 			if file == "" {
 				file = "fixture.go"
 			}
-			for name, content := range map[string]string{
-				"go.mod": "module " + module + "\n\ngo 1.24\n",
-				file:     tc.source,
-			} {
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if tc.driver != "" {
-				driver := filepath.Join(dir, "driver")
-				if err := os.WriteFile(driver, []byte(tc.driver), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				t.Setenv("GOPACKAGESDRIVER", driver)
-			}
+			writeFixture(t, dir, map[string]string{"go.mod": "module " + module + "\ngo 1.24\n", file: tc.source})
 			for attempt := 0; attempt < 2; attempt++ {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				cmd := exec.CommandContext(ctx, goCommand, "vet", "-vettool="+tool, "./...")
-				cmd.WaitDelay = 5 * time.Second
-				cmd.Dir = dir
-				out, err := cmd.CombinedOutput()
-				contextErr := ctx.Err()
-				cancel()
-				if contextErr != nil {
-					t.Fatalf("vet timed out: %v\n%s", contextErr, out)
+				code, out := runTool(t, dir, tool, "check", "./...")
+				wantCode := 0
+				if tc.want != "" {
+					wantCode = 1
 				}
-				if strings.Contains(string(out), "panic:") {
-					t.Fatalf("analyzer panicked:\n%s", out)
+				if code != wantCode || !strings.Contains(out, tc.want) || strings.Contains(out, "panic:") {
+					t.Fatalf("attempt %d: status=%d, want=%d %q\n%s", attempt, code, wantCode, tc.want, out)
 				}
-				if tc.transient && attempt == 1 {
-					if err != nil {
-						t.Fatalf("recovered loader failed: %v\n%s", err, out)
-					}
-					calls, err := os.ReadFile(filepath.Join(dir, "driver-calls"))
-					if err != nil || string(calls) != "xx" {
-						t.Fatalf("loader was not retried after failure: calls=%q err=%v", calls, err)
-					}
-					continue
-				}
-				if tc.want == "" {
-					if err != nil {
-						t.Fatalf("clean fixture failed: %v\n%s", err, out)
-					}
-					continue
-				}
-				if err == nil {
-					t.Fatalf("attempt %d: expected vet failure, got success:\n%s", attempt+1, out)
-				}
-				if !strings.Contains(string(out), tc.want) {
-					t.Fatalf("missing diagnostic %q:\n%s", tc.want, out)
-				}
-				if tc.wantCount > 0 && strings.Count(string(out), tc.want) != tc.wantCount {
+				if tc.wantCount > 0 && strings.Count(out, tc.want) != tc.wantCount {
 					t.Fatalf("expected %d occurrences of %q:\n%s", tc.wantCount, tc.want, out)
 				}
 			}
-			if tc.name == "blocked import" {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				cmd := exec.CommandContext(ctx, goCommand, "vet", "-json", "-vettool="+tool, "./...")
-				cmd.WaitDelay = 5 * time.Second
-				cmd.Dir = dir
-				out, err := cmd.CombinedOutput()
-				contextErr := ctx.Err()
-				cancel()
-				if contextErr != nil || err != nil {
-					t.Fatalf("JSON diagnostics: context=%v err=%v\n%s", contextErr, err, out)
-				}
-				start := bytes.IndexByte(out, '{') // Older Go versions prefix the package name.
-				var diagnostics map[string]map[string][]struct {
-					Message string `json:"message"`
-				}
-				if start < 0 || json.Unmarshal(out[start:], &diagnostics) != nil {
-					t.Fatalf("invalid JSON diagnostics:\n%s", out)
-				}
-				entries := diagnostics["example.org/molint-fixture"]["pkgblocklist"]
-				if len(entries) != 1 || !strings.Contains(entries[0].Message, tc.want) {
-					t.Fatalf("unexpected pkgblocklist diagnostics: %+v", entries)
-				}
-			}
-			if tc.name == "empty loader response" {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				cmd := exec.CommandContext(ctx, goCommand, "vet", "-json", "-vettool="+tool, "./...")
-				cmd.WaitDelay = 5 * time.Second
-				cmd.Dir = dir
-				out, err := cmd.CombinedOutput()
-				contextErr := ctx.Err()
-				cancel()
-				if contextErr != nil || err == nil || !strings.Contains(string(out), tc.want) {
-					t.Fatalf("JSON-mode loader failure: context=%v err=%v\n%s", contextErr, err, out)
+			if tc.name == "blocked import" || tc.name == "recover" {
+				code, out := runTool(t, dir, tool, "check", "-json", "./...")
+				var r results
+				if code != 1 || json.Unmarshal([]byte(out), &r) != nil || r.Error != "" || len(r.Diagnostics) == 0 || !strings.Contains(out, tc.want) {
+					t.Fatalf("JSON must preserve findings and failure status: %d %s", code, out)
 				}
 			}
 		})
+	}
+	t.Run("module ownership changes with warm cache", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{"fixture.go": "package fixture\nimport _ \"example.net/other\"\n", "vendor/example.net/other/p.go": "package other\n"})
+		for _, module := range []string{"example.org/good", "go.etcd.io/etcd", "example.org/good"} {
+			writeFixture(t, dir, map[string]string{
+				"go.mod":             "module example.org/cache-fixture\ngo 1.24\nrequire " + module + " v1.0.0\n",
+				"vendor/modules.txt": "# " + module + " v1.0.0\n## explicit; go 1.24\nexample.net/other\n",
+			})
+			code, out := runTool(t, dir, tool, "check", "-mod=vendor", "./...")
+			want := 0
+			if module == "go.etcd.io/etcd" {
+				want = 1
+			}
+			if code != want || (want == 1 && !strings.Contains(out, "do not use packages in module go.etcd.io/etcd")) {
+				t.Fatalf("module %s status=%d want=%d: %s", module, code, want, out)
+			}
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			code, out := runTool(t, dir, goCommand, "vet", "-mod=vendor", "-vettool="+tool, "./...")
+			if code == 0 || !strings.Contains(out, "molint check") {
+				t.Fatalf("old entry passed: %d %s", code, out)
+			}
+		}
+	})
+	t.Run("literal ellipsis import", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{
+			"go.mod":                        "module example.org/ellipsis-fixture\ngo 1.24\nrequire (\nexample.org/good v1.0.0\ngo.etcd.io/etcd v1.0.0\n)\n",
+			"fixture.go":                    "package fixture\nimport _ \"example.org/a...b\"\n",
+			"vendor/modules.txt":            "# example.org/good v1.0.0\n## explicit; go 1.24\nexample.org/a---b\n# go.etcd.io/etcd v1.0.0\n## explicit; go 1.24\nexample.org/a...b\n",
+			"vendor/example.org/a---b/p.go": "package p\n",
+			"vendor/example.org/a...b/p.go": "package p\n",
+		})
+		if code, out := runTool(t, dir, tool, "check", "-mod=vendor", "./..."); code != 1 || !strings.Contains(out, "module go.etcd.io/etcd") {
+			t.Fatalf("literal import: %d %s", code, out)
+		}
+	})
+	t.Run("source selection and overlays", func(t *testing.T) { testSourceSelection(t, tool) })
+	t.Run("readonly replacements and actual Go driver", func(t *testing.T) { testModuleSelection(t, tool) })
+	t.Run("named files and empty selection", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{"go.mod": "module example.org/files-fixture\ngo 1.24\n", "fixture.go": "package fixture\nimport _ \"io/ioutil\"\n", "missing/.keep": ""})
+		if code, out := runTool(t, dir, tool, "check", "fixture.go"); code != 1 || !strings.Contains(out, "io/ioutil") {
+			t.Fatalf("named file: %d %s", code, out)
+		}
+		if code, out := runTool(t, dir, tool, "check", "./missing/..."); code != 2 || !strings.Contains(out, "no packages selected") {
+			t.Fatalf("empty selection: %d %s", code, out)
+		}
+	})
+	t.Run("GOPATH package ownership", func(t *testing.T) {
+		gopath := t.TempDir()
+		dir := filepath.Join(gopath, "src", "example.org", "fixture")
+		writeFixture(t, dir, map[string]string{"fixture.go": "package fixture\nimport _ \"fmt\"\n"})
+		t.Setenv("GOPATH", gopath)
+		t.Setenv("GO111MODULE", "off")
+		if code, out := runTool(t, dir, tool, "check", "."); code != 0 {
+			t.Fatalf("GOPATH: %d %s", code, out)
+		}
+	})
+	t.Run("unsupported source generation", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{"go.mod": "module example.org/swig-fixture\ngo 1.24\n", "fixture.go": "package fixture\n", "fixture.swig": "%module fixture\n"})
+		if code, out := runTool(t, dir, tool, "check", "."); code != 2 || !strings.Contains(out, "SWIG") {
+			t.Fatalf("SWIG: %d %s", code, out)
+		}
+	})
+	t.Run("infrastructure failure and recovery", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, map[string]string{"go.mod": "module example.org/error-fixture\ngo 1.24\n", "fixture.go": "package fixture\nfunc f() int { return \"wrong type\" }\n"})
+		for attempt := 0; attempt < 2; attempt++ {
+			code, out := runTool(t, dir, tool, "check", "-json", "./...")
+			var r results
+			if code != 2 || json.Unmarshal([]byte(out), &r) != nil || !strings.Contains(r.Error, "wrong type") {
+				t.Fatalf("type failure: %d %s", code, out)
+			}
+		}
+		writeFixture(t, dir, map[string]string{"fixture.go": "package fixture\nfunc f() int { return 1 }\n"})
+		if code, out := runTool(t, dir, tool, "check", "./..."); code != 0 {
+			t.Fatalf("recovery: %d %s", code, out)
+		}
+	})
+}
+
+func TestReadVetOutput(t *testing.T) {
+	for _, data := range []string{`null`, `{`, `{"p":null}`, `{"p":{"checkrecover":null}}`, `{"p":{"checkrecover":{"error":"failed"}}}`, `{"p":{"checkrecover":[{}]}}`, "unexpected output"} {
+		r := results{Diagnostics: make(map[string]map[string][]diagnostic)}
+		if _, err := r.readVetOutput([]byte(data), &bytes.Buffer{}); err == nil {
+			t.Fatalf("accepted %q", data)
+		}
 	}
 }

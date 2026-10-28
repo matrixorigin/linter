@@ -1,37 +1,25 @@
 package checkunsafe
 
 import (
+	"fmt"
 	"path"
-	"path/filepath"
-	"strconv"
-
-	"golang.org/x/tools/go/analysis"
+	"strings"
 )
 
-var Analyzer = &analysis.Analyzer{
-	Name: "checkunsafe",
-	Doc:  "Tool to check usages of the unsafe package",
-	Run:  run,
-}
-
 var importWhiteList = []string{
-	"github.com/matrixorigin/matrixone/cgo/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/cgo/lib.cgo1.go",
 	"github.com/matrixorigin/matrixone/cgo/lib.go",
 	"github.com/matrixorigin/matrixone/cmd/mo-service/debug.go",
 	"github.com/matrixorigin/matrixone/pkg/cnservice/server_query_test.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/arena.go",
 	"github.com/matrixorigin/matrixone/pkg/common/arenaskl/skl.go",
-	"github.com/matrixorigin/matrixone/pkg/common/bitmap/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap/bitmap.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap/cbitmap.cgo1.go",
-	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/cbloomfilter.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/util.go",
 	"github.com/matrixorigin/matrixone/pkg/common/buffer/buffer.go",
 	"github.com/matrixorigin/matrixone/pkg/common/buffer/chunk.go",
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/filter.go",
-	"github.com/matrixorigin/matrixone/pkg/common/docfilter/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cbitmap.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/croaring.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/fastrand/fastrand.go",
@@ -39,7 +27,6 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/iterator.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashmap/strhashmap.go",
 	"github.com/matrixorigin/matrixone/pkg/common/hashtable/bucket.go",
-	"github.com/matrixorigin/matrixone/pkg/common/malloc/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/c_allocator_linux.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/checked_allocator.go",
@@ -96,7 +83,6 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/sql/compile/remoterun.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/mysql_sql.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql/postgresql_sql.go",
-	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/cxcall.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_builtin.go",
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_cast.go",
@@ -111,7 +97,6 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_log.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search_test.go",
-	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/_cgo_gotypes.go",
 	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search.cgo1.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
@@ -140,6 +125,73 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_darwin.go",
 	"github.com/matrixorigin/matrixone/pkg/container/hashtable/hash_arm64.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/meminfo_darwin.go",
+	// Existing pointer ownership and physical-layout regression tests.
+	"github.com/matrixorigin/matrixone/pkg/common/bitmap/bitmap_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/hashmap/inthashmap_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/hashmap/strhashmap_lazy_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_reclaim_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/allocation_account_mpool_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/mpool_onheap_ownership_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/mpool_profile_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/mpool_test.go",
+	"github.com/matrixorigin/matrixone/pkg/common/mpool/realloc_failure_linux_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/arrowbridge/bridge_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/allocation_account_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/prehashed_lookup_edge_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/stable_hash_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/pSpool/sender_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/types/collation_metadata_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/vector/buffer_lease_test.go",
+	"github.com/matrixorigin/matrixone/pkg/container/vector/functionTool_test.go",
+	"github.com/matrixorigin/matrixone/pkg/lockservice/txn_test.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/external/reader_arrow_test.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/partition/hash_test.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/base_binder_case_test.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/legacy_tinytext_cache_test.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/brute_force/indexsize_test.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/hnsw/quantization_test.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/db/gc/v3/window_test.go",
+
+	// Physical size/layout accounting at these existing allocation owners.
+	"github.com/matrixorigin/matrixone/pkg/common/bloomfilter/types.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/allocation_account.go",
+	"github.com/matrixorigin/matrixone/pkg/fulltext2/build_pipeline.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/analytic_allocation.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/join.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/kernel.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/program.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/recursive.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/setup.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent/source.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent_expression.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/dependent_reducer.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/mergecte/mergecte.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/mergetop/types.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/order/types.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/partition/hash.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/set_operation_allocation.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/window/window.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/compile/dependent.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/compile/dependent_external.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/func_cast_integer_assignment.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/continuation.go",
+	"github.com/matrixorigin/matrixone/pkg/vm/process/dependent_scope.go",
+
+	// Existing CGo/allocator, zero-copy, alignment, and stable-hash boundaries.
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.cgo1.go",
+	"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.cgo1.go",
+	"github.com/matrixorigin/matrixone/pkg/common/hashmap/keycodec/keycodec.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.cgo1.go",
+	"github.com/matrixorigin/matrixone/pkg/common/malloc/mmap_reclaim.go",
+	"github.com/matrixorigin/matrixone/pkg/container/arrowbridge/convert.go",
+	"github.com/matrixorigin/matrixone/pkg/container/hashtable/stable_hash.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/external/arrowio/reader.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/shuffle/shufflepool.go",
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/byte_like_wildcard_search.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/hnsw/types.go",
+
+	// Protobuf-generated descriptor storage; other generated files remain checked.
+	"github.com/matrixorigin/matrixone/pkg/datastream/v1/datastream.pb.go",
 }
 
 var importOK = func() func(path string) bool {
@@ -152,30 +204,16 @@ var importOK = func() func(path string) bool {
 	}
 }()
 
-func run(pass *analysis.Pass) (interface{}, error) {
-
-	// check imports in files
-	for _, file := range pass.Files {
-		pos := pass.Fset.Position(file.FileStart)
-		fileName := filepath.Base(pos.Filename)
-		for _, imp := range file.Imports {
-			importPath, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				return nil, err
-			}
-			if importPath != "unsafe" {
-				continue
-			}
-			specPath := path.Join(pass.Pkg.Path(), fileName)
-			if !importOK(specPath) {
-				pass.Reportf(
-					imp.Pos(),
-					"importing the unsafe package is not allowed in this file: %v",
-					specPath,
-				)
-			}
-		}
+// Message checks an authored unsafe import. The command supplies the actual
+// source basename, independently of //line directives. Retain the existing
+// file-level authorizations for cgo sources under their former cooked names.
+func Message(pkgPath, fileName string, cgo bool) string {
+	if cgo {
+		fileName = strings.TrimSuffix(fileName, ".go") + ".cgo1.go"
 	}
-
-	return nil, nil
+	key := path.Join(pkgPath, fileName)
+	if importOK(key) {
+		return ""
+	}
+	return fmt.Sprintf("importing the unsafe package is not allowed in this file: %s", key)
 }
