@@ -58,7 +58,10 @@ as with an ordinary Go build; the command does not create an atomic snapshot.
 As required by the [error handling rules](https://github.com/matrixorigin/matrixone/blob/main/pkg/common/moerr/error_handling.md),
 recover is allowed only at explicitly approved function boundaries. Tests are
 exempt. Recognition uses the built-in function's type binding, including
-parentheses; an unrelated function named `recover` is not a violation.
+parentheses; an unrelated function named `recover` is not a violation. An approved
+function does not authorize an inline `go` function literal unless that owner is
+explicitly approved for worker recovery. Worker approval is function-wide; calls
+through function-valued variables and callbacks are not resolved as goroutines.
 
 ### pkgblocklist
 
@@ -70,9 +73,9 @@ modules and imports of unselected dependency packages are not checked.
 
 Check authored `unsafe` imports against the exact file allowlist. CGo's generated
 support imports are not authored imports; handwritten imports in a CGo file are
-still checked, including raw and escaped string literals. Existing CGo file
-approvals retain their historical `<source>.cgo1.go` keys. Generated source files
-on disk are checked like other selected Go files.
+still checked, including raw and escaped string literals. CGo file approvals identify the authored CGo source and do not authorize a
+regular source named like generated output. Generated source files on disk are
+checked like other selected Go files.
 
 ### checklog
 

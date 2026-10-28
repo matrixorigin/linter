@@ -84,7 +84,6 @@ var whiteList = []approved{
 
 	// recover for inpsect dn
 	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/rpc.Handle", "HandleInspectTN"},
-	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tasks.CancelableJob", "Start"},
 
 	// recover for engine
 	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.GlobalStats", "consumeLogtail"},
@@ -113,9 +112,6 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "buildRetryCompile"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "runSiriusRead"},
-	{"github.com/matrixorigin/matrixone/pkg/fulltext2.BuildPipeline", "processChunk"},
-	{"github.com/matrixorigin/matrixone/pkg/fulltext2.BuildPipeline", "seal"},
-	{"github.com/matrixorigin/matrixone/pkg/fulltext2", "fanOut"},
 
 	// Foreign Arrow/FlatBuffers and encoded JSON/object inputs have panic-based accessors.
 	{"github.com/matrixorigin/matrixone/pkg/cdc", "TableHasForeignKeyConstraint"},
@@ -149,7 +145,6 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile", "handlePipelineMessage"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile/siriusbridge", "callCleanup"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile/siriusbridge", "callPrepare"},
-	{"github.com/matrixorigin/matrixone/pkg/sql/compile/siriusbridge.Query", "Run"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Scope", "createSessionTemporaryTable"},
 	{"github.com/matrixorigin/matrixone/pkg/vectorindex/cache", "runLifecycleHooks"},
 
@@ -189,6 +184,16 @@ var whiteList = []approved{
 	{"github.com/matrixorigin/matrixone/pkg/vectorindex/sqlexec", "HasProvenanceColumns"},
 }
 
+// directGoWhiteList contains reviewed owners that recover in launched workers.
+// These owners are also approved for synchronous recovery.
+var directGoWhiteList = []approved{
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tasks.CancelableJob", "Start"},
+	{"github.com/matrixorigin/matrixone/pkg/fulltext2.BuildPipeline", "processChunk"},
+	{"github.com/matrixorigin/matrixone/pkg/fulltext2.BuildPipeline", "seal"},
+	{"github.com/matrixorigin/matrixone/pkg/fulltext2", "fanOut"},
+	{"github.com/matrixorigin/matrixone/pkg/sql/compile/siriusbridge.Query", "Run"},
+}
+
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
@@ -221,7 +226,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					typeName, funcName = pass.Pkg.Path(), "<package initializer>"
 				}
 			}
-			if !isWhiteListed(whiteList, typeName, funcName) {
+			allow, allowDirectGo := isWhiteListed(typeName, funcName)
+			if !allow || (!allowDirectGo && inDirectGo(pass, node)) {
 				msg := fmt.Sprintf("%v: in %s.%s()",
 					errUnsafeRecover,
 					typeName,
@@ -235,14 +241,56 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, analysisErr
 }
 
-func isWhiteListed(whiteList []approved, typeName string, functionName string) bool {
-	for _, rec := range whiteList {
+func isWhiteListed(typeName, functionName string) (bool, bool) {
+	for _, rec := range directGoWhiteList {
 		if rec.receiverTypeName == typeName && rec.functionName == functionName {
-			return true
+			return true, true
 		}
 	}
+	for _, rec := range whiteList {
+		if rec.receiverTypeName == typeName && rec.functionName == functionName {
+			return true, false
+		}
+	}
+	return false, false
+}
 
+// inDirectGo identifies a recover inside a directly launched function literal.
+// Go evaluates the call's arguments before launching it; those expressions are
+// deliberately outside the launched literal's body.
+func inDirectGo(pass *analysis.Pass, node ast.Node) bool {
+	for _, file := range pass.Files {
+		path, _ := astutil.PathEnclosingInterval(file, node.Pos(), node.Pos())
+		for _, ancestor := range path {
+			stmt, ok := ancestor.(*ast.GoStmt)
+			if !ok {
+				continue
+			}
+			lit := launchedLiteral(pass, stmt.Call.Fun)
+			if lit != nil && lit.Body.Pos() <= node.Pos() && node.Pos() < lit.Body.End() {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+// Function-type conversions preserve the identity of their operand; unwrap
+// them so an inline worker is still attributed to its go statement.
+func launchedLiteral(pass *analysis.Pass, expr ast.Expr) *ast.FuncLit {
+	for {
+		switch value := ast.Unparen(expr).(type) {
+		case *ast.FuncLit:
+			return value
+		case *ast.CallExpr:
+			if len(value.Args) != 1 || !pass.TypesInfo.Types[value.Fun].IsType() {
+				return nil
+			}
+			expr = value.Args[0]
+		default:
+			return nil
+		}
+	}
 }
 
 func getFunctionDetails(pass *analysis.Pass, node ast.Node) (string, string, bool) {

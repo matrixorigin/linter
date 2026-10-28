@@ -148,6 +148,12 @@ func TestCheck(t *testing.T) {
 		{name: "alias named like approved receiver", module: "github.com/matrixorigin/matrixone/pkg/common/morpc", source: "package fixture\ntype unrelated struct{}\ntype remoteBackend = unrelated\nfunc (*remoteBackend) writeLoop() { recover() }\n", want: "unsafe recover() found"},
 		{name: "recover in test file", file: "fixture_test.go", source: "package fixture\nfunc f() { recover() }\n"},
 		{name: "logging", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "logging exact approved package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n"},
+		{name: "logging approved package value receiver", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql", source: "package fixture\nimport \"fmt\"\ntype T struct{}\nfunc (T) f() { fmt.Println(1) }\n"},
+		{name: "logging adjacent package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql_extra", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "logging child package", module: "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql/unaudited", source: "package fixture\nimport \"fmt\"\nfunc f() { fmt.Println(1) }\n", want: "uncatch log function"},
+		{name: "historic cgo source approved", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.go", source: "package fixture\nimport \"C\"\nimport _ \"unsafe\"\n"},
+		{name: "historic cgo cooked name not approved", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.cgo1.go", source: "package fixture\nimport _ \"unsafe\"\n", want: "importing the unsafe package"},
 		{name: "clean cgo", source: "package fixture\nimport \"C\"\n"},
 		{name: "authored unsafe in cgo", source: "package fixture\nimport \"C\"\nimport _ `unsafe`\n", want: "importing the unsafe package", wantCount: 1},
 		{name: "allowed cgo import", module: "github.com/matrixorigin/matrixone/pkg/common/docfilter", file: "cbitmap.go", source: "package fixture\nimport \"C\"\nimport _ \"unsafe\"\n"},
@@ -312,6 +318,29 @@ func TestCheck(t *testing.T) {
 		}
 	})
 	t.Run("source selection and overlays", func(t *testing.T) { testSourceSelection(t, tool) })
+	t.Run("recover boundaries distinguish directly launched workers", func(t *testing.T) {
+		for _, tt := range []struct {
+			name, module, source string
+			want                 bool
+		}{
+			{"approved cleanup defer", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { defer func() { if v := recover(); v != nil { panic(v) } }() }", false},
+			{"unapproved launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go func() { defer func() { recover() }(); panic(1) }() }", true},
+			{"parenthesized launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go (func() { defer func() { recover() }(); panic(1) })() }", true},
+			{"converted launched worker", "github.com/matrixorigin/matrixone/pkg/frontend", "type worker func()\nfunc parseStmtExecute() { go worker(func() { defer func() { recover() }(); panic(1) })() }", true},
+			{"argument evaluated synchronously", "github.com/matrixorigin/matrixone/pkg/frontend", "func parseStmtExecute() { go func(any) {}(recover()) }", false},
+			{"reviewed worker", "github.com/matrixorigin/matrixone/pkg/fulltext2", "func fanOut() { go func() { defer func() { recover() }() }() }", false},
+			{"adjacent worker", "github.com/matrixorigin/matrixone/pkg/fulltext2", "func other() { go func() { defer func() { recover() }() }() }", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				dir := t.TempDir()
+				writeFixture(t, dir, map[string]string{"go.mod": "module " + tt.module + "\ngo 1.24\n", "x.go": "package fixture\n" + tt.source + "\n"})
+				code, out := runTool(t, dir, tool, "check", "-checkrecover", ".")
+				if (tt.want && (code != 1 || !strings.Contains(out, "unsafe recover"))) || (!tt.want && code != 0) {
+					t.Fatalf("got exit %d: %s", code, out)
+				}
+			})
+		}
+	})
 	t.Run("logging uses per-file typed identity", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFixture(t, dir, map[string]string{

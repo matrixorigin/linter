@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -33,7 +32,7 @@ const doc = "Tool to check the usage of log.*() or fmt.Print*() to ensure it is 
 
 // Analyzer check usage of log.* and fmt.Print*() with following rules
 // - exclude *_test.go file
-// - exclude functions in whiteList4fmt
+// - exclude explicitly approved packages and functions
 var Analyzer = &analysis.Analyzer{
 	Name:     "checklog",
 	Doc:      doc,
@@ -98,7 +97,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 						return
 					}
 				}
-				if isWhiteListed(whiteList4fmt, typeName, funcName) {
+				if isWhiteListed(pass.Pkg.Path(), typeName, funcName) {
 					return
 				}
 				pass.Reportf(n.Pos(), "uncatch log function: %s: in %s.%s()", function, typeName, funcName)
@@ -148,45 +147,26 @@ func blockedFunction(pass *analysis.Pass, expr ast.Expr) (string, error) {
 	return "", nil
 }
 
-// approved like
-// - struct{ package_path,            global_function }
-// - struct{ package_path.class_name, member_function }
-type approved struct {
-	receiverTypeName string
-	functionName     string
-}
-
-// whiteList4fmt array of approved
-var whiteList4fmt = []approved{
-	// bin tool
-	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/goyacc`, `*`},
-	// version info
-	{`github.com/matrixorigin/matrixone/cmd/mo-service`, `maybePrintVersion`},
-	// example
-	{`.*/example`, `*`},
-	{`.*/example\..*`, `*`},
-	// generated
-	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql`, `*`},
-	{`github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql`, `*`},
-	// mo-debug
-	{`github.com/matrixorigin/matrixone/cmd/mo-debug`, `*`},
-	// Opt-in regexp2 engine tracing preserves the upstream Debug output.
-	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `scan`},
-	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `backtrack`},
-	{`^github[.]com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2[.]runner$`, `dumpState`},
-	// This standalone E2E command prints its report location for its caller.
-	{`^github[.]com/matrixorigin/matrixone/test/kafkaconnect$`, `runMain`},
-}
-
-func isWhiteListed(whiteList []approved, typeName string, functionName string) (match bool) {
-	for _, rec := range whiteList {
-		if rec.receiverTypeName == typeName && (rec.functionName == functionName || rec.functionName == "*") {
-			return true
-		}
-		valuesRe := regexp.MustCompile(rec.receiverTypeName)
-		if len(valuesRe.FindAllString(typeName, -1)) > 0 && (rec.functionName == functionName || rec.functionName == "*") {
-			return true
-		}
+// isWhiteListed grants package-wide exceptions only to the exact package.
+// Named function and receiver exceptions retain their exact boundaries.
+func isWhiteListed(pkgPath, typeName, functionName string) bool {
+	switch pkgPath {
+	case "github.com/matrixorigin/matrixone/pkg/sql/parsers/goyacc",
+		"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/postgresql",
+		"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql",
+		"github.com/matrixorigin/matrixone/cmd/mo-debug":
+		return true
+	}
+	if strings.HasSuffix(pkgPath, "/example") {
+		return true
+	}
+	switch typeName {
+	case "github.com/matrixorigin/matrixone/cmd/mo-service":
+		return functionName == "maybePrintVersion"
+	case "github.com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2.runner":
+		return functionName == "scan" || functionName == "backtrack" || functionName == "dumpState"
+	case "github.com/matrixorigin/matrixone/test/kafkaconnect":
+		return functionName == "runMain"
 	}
 	return false
 }
@@ -199,9 +179,12 @@ func getMethodDetails(pass *analysis.Pass, node ast.Node) (string, string, bool)
 		}
 		for _, cp := range path {
 			if fd, ok := cp.(*ast.FuncDecl); ok && fd.Recv != nil {
-				recvExp := fd.Recv.List[0].Type
-				if p, ok := pass.TypesInfo.Types[recvExp].Type.(*types.Pointer); ok {
-					return p.Elem().String(), fd.Name.Name, true
+				recvType := types.Unalias(pass.TypesInfo.TypeOf(fd.Recv.List[0].Type))
+				if p, ok := recvType.(*types.Pointer); ok {
+					recvType = types.Unalias(p.Elem())
+				}
+				if named, ok := recvType.(*types.Named); ok && named.Obj().Pkg() != nil {
+					return named.Obj().Pkg().Path() + "." + named.Obj().Name(), fd.Name.Name, true
 				}
 			}
 		}

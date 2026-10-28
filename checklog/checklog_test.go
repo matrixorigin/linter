@@ -2,45 +2,27 @@ package checklog
 
 import "testing"
 
-func Test_isWhiteListed(t *testing.T) {
-	type args struct {
-		whiteList    []approved
-		typeName     string
-		functionName string
-	}
-	tests := []struct {
-		name      string
-		args      args
-		wantMatch bool
+func TestIsWhiteListed(t *testing.T) {
+	const mysql = "github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql"
+	const regexp = "github.com/matrixorigin/matrixone/pkg/sql/plan/function/internal/regexp2"
+	for _, tt := range []struct {
+		name, pkg, owner, function string
+		want                       bool
 	}{
-		{
-			name: "normal",
-			args: args{
-				//getFunction type, func: 'github.com/matrixorigin/matrixone/pkg/sql/parsers/example', 'main'
-				//pkg/sql/parsers/example/eg_mysql.go:33:2: unsafe log fmt.Printf: in github.com/matrixorigin/matrixone/pkg/sql/parsers/example.main()
-				// -----
-				// # github.com/matrixorigin/matrixone/pkg/util/trace/example
-				//getMethod type, func: 'github.com/matrixorigin/matrixone/pkg/util/trace/example.dummyStringWriter', 'WriteString'
-				whiteList:    whiteList4fmt,
-				typeName:     "github.com/matrixorigin/matrixone/pkg/sql/parsers/example",
-				functionName: "main",
-			},
-			wantMatch: true,
-		},
-		{
-			name: "normal",
-			args: args{
-				whiteList:    whiteList4fmt,
-				typeName:     "github.com/matrixorigin/matrixone/pkg/util/trace/example.dummyStringWriter",
-				functionName: "WriteString",
-			},
-			wantMatch: true,
-		},
-	}
-	for _, tt := range tests {
+		{"exact package", mysql, mysql, "F", true},
+		{"method in exact package", mysql, mysql + ".T", "F", true},
+		{"sibling prefix", mysql + "_extra", mysql + "_extra", "F", false},
+		{"child package", mysql + "/unaudited", mysql + "/unaudited", "F", false},
+		{"example package", "example.org/foo/example", "example.org/foo/example.T", "F", true},
+		{"example lookalike", "example.org/foo/example_extra", "example.org/foo/example_extra", "F", false},
+		{"example child", "example.org/foo/example/other", "example.org/foo/example/other", "F", false},
+		{"approved method", regexp, regexp + ".runner", "scan", true},
+		{"neighbor method", regexp, regexp + ".runner", "other", false},
+		{"neighbor receiver", regexp, regexp + ".other", "scan", false},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if gotMatch := isWhiteListed(tt.args.whiteList, tt.args.typeName, tt.args.functionName); gotMatch != tt.wantMatch {
-				t.Errorf("isWhiteListed() = %v, want %v", gotMatch, tt.wantMatch)
+			if got := isWhiteListed(tt.pkg, tt.owner, tt.function); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
