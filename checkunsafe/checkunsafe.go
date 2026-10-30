@@ -84,6 +84,7 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_error.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_log.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/helper_test.go",
 	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search_test.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
@@ -195,6 +196,15 @@ var cgoWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/cmembership.go",
 	"github.com/matrixorigin/matrixone/pkg/common/docfilter/sorted64.go",
 	"github.com/matrixorigin/matrixone/pkg/common/malloc/jemalloc_allocator.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/adhoc.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/brute_force.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/cagra.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/device_memory.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/distance.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/helper.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/ivf_flat.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/ivf_pq.go",
+	"github.com/matrixorigin/matrixone/pkg/cuvs/kmeans.go",
 }
 
 var importOK = func() func(path string) bool {
