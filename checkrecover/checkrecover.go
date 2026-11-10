@@ -46,6 +46,11 @@ type approved struct {
 }
 
 var whiteList = []approved{
+	// M0: workers join before publication; rewrites return persisted cleanup
+	// identities even after panic; backup retains both panic and cleanup errors.
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.Transaction", "compactDeletionOnObjsLocked"},
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.txnTable", "rewriteObjectByDeletion"},
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail", "ReWriteCheckpointAndBlockFromKey"},
 	// recover for pipeline building and pipeline running.
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "Compile"},
 	{"github.com/matrixorigin/matrixone/pkg/sql/compile.Compile", "runOnce"},

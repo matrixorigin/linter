@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/analysistest"
 )
 
 func TestRecoverRequiresTypeInformation(t *testing.T) {
@@ -33,4 +34,10 @@ func TestRecoverRequiresTypeInformation(t *testing.T) {
 			t.Fatal("missing type information must fail analysis")
 		}
 	}
+}
+
+func TestM0RecoveryBoundaries(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), Analyzer,
+		"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae",
+		"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail")
 }
