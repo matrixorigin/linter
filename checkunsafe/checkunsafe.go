@@ -84,6 +84,8 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/frontend/util.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/block_info.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/codecs.go",
+	// Address-only overlap checks guard the compression arena.
+	"github.com/matrixorigin/matrixone/pkg/objectio/compression_overlap.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/id.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/id_test.go",
 	"github.com/matrixorigin/matrixone/pkg/objectio/location.go",
