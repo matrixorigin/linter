@@ -25,6 +25,8 @@ func TestMessageUsesSourceProvenance(t *testing.T) {
 		{"ordinary cooked-looking file", "github.com/matrixorigin/matrixone/pkg/common/docfilter", "cbitmap.cgo1.go", false, false},
 		{"linux cgo source", "github.com/matrixorigin/matrixone/pkg/common/malloc", "c_allocator_linux.go", true, true},
 		{"ordinary approved source", "github.com/matrixorigin/matrixone/pkg/common/docfilter", "filter.go", false, true},
+		{"compression overlap helper", "github.com/matrixorigin/matrixone/pkg/objectio", "compression_overlap.go", false, true},
+		{"object writer remains forbidden", "github.com/matrixorigin/matrixone/pkg/objectio", "writer.go", false, false},
 		{"unrelated cgo source", "github.com/matrixorigin/matrixone/pkg/common/docfilter", "other.go", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
