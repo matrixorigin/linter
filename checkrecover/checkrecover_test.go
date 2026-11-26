@@ -36,7 +36,7 @@ func TestRecoverRequiresTypeInformation(t *testing.T) {
 	}
 }
 
-func TestM0RecoveryBoundaries(t *testing.T) {
+func TestEngineRecoveryBoundaries(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), Analyzer,
 		"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae",
 		"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail")

@@ -87,6 +87,10 @@ var importWhiteList = []string{
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_log.go",
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/report_statement.go",
 	"github.com/matrixorigin/matrixone/pkg/vectorindex/usearchex/search_test.go",
+	// Read-only uint32 pair views of 16-bit elements, bounded by len/2.
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/metric/distance_func_narrow_arm64.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/metric/distance_func_narrow_amd64.go",
+	"github.com/matrixorigin/matrixone/pkg/vectorindex/metric/distance_func_narrow_f16_amd64.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache/types.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/partition_state.go",
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay/types.go",

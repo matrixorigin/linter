@@ -46,6 +46,10 @@ type approved struct {
 }
 
 var whiteList = []approved{
+	// Database clone readers join before returning an error. Spill preparation
+	// workers join before serial publication and cleanup of unpublished writers.
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.Engine", "LoadDatabaseCloneSources"},
+	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.Transaction", "dumpInsertBatchLocked"},
 	// M0: workers join before publication; rewrites return persisted cleanup
 	// identities even after panic; backup retains both panic and cleanup errors.
 	{"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae.Transaction", "compactDeletionOnObjsLocked"},
