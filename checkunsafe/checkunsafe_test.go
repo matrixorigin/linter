@@ -27,6 +27,10 @@ func TestMessageUsesSourceProvenance(t *testing.T) {
 		{"ordinary approved source", "github.com/matrixorigin/matrixone/pkg/common/docfilter", "filter.go", false, true},
 		{"compression overlap helper", "github.com/matrixorigin/matrixone/pkg/objectio", "compression_overlap.go", false, true},
 		{"object writer remains forbidden", "github.com/matrixorigin/matrixone/pkg/objectio", "writer.go", false, false},
+		{"ARM64 narrow SIMD view", "github.com/matrixorigin/matrixone/pkg/vectorindex/metric", "distance_func_narrow_arm64.go", false, true},
+		{"AMD64 bf16 SIMD view", "github.com/matrixorigin/matrixone/pkg/vectorindex/metric", "distance_func_narrow_amd64.go", false, true},
+		{"AMD64 f16 SIMD view", "github.com/matrixorigin/matrixone/pkg/vectorindex/metric", "distance_func_narrow_f16_amd64.go", false, true},
+		{"scalar metric remains forbidden", "github.com/matrixorigin/matrixone/pkg/vectorindex/metric", "distance_func_narrow.go", false, false},
 		{"unrelated cgo source", "github.com/matrixorigin/matrixone/pkg/common/docfilter", "other.go", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
